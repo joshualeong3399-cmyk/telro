@@ -157,5 +157,38 @@ router.patch('/status/update', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── 导出账单报表 (CSV) ─────────────────────────────────────────────────────────
+router.get( '/export', async ( req, res ) => {
+  try {
+    const scope = getScopeFilter( req.user );
+    const year = parseInt( req.query.year ) || new Date().getFullYear();
+    const month = parseInt( req.query.month ) || ( new Date().getMonth() + 1 );
+    const startDate = new Date( year, month - 1, 1 );
+    const endDate = new Date( year, month, 0, 23, 59, 59 );
+    const filter = buildFilter( scope, { year, month } );
+
+    const result = await billingService.getBillingByDateRange( startDate, endDate, filter.extensionId, filter.merchantId );
+    const rows = Array.isArray( result ) ? result : ( result.rows || result.data || [] );
+
+    // Build CSV
+    const header = [ '日期', '分机', '通话时长(秒)', '费用', '类型', '状态' ].join( ',' );
+    const csvRows = rows.map( b => [
+      b.createdAt ? new Date( b.createdAt ).toISOString().slice( 0, 10 ) : '',
+      b.extensionId || '',
+      b.duration || 0,
+      b.amount || 0,
+      b.callType || '',
+      b.status || '',
+    ].join( ',' ) );
+    const csv = [ header, ...csvRows ].join( '\n' );
+
+    const monthStr = String( month ).padStart( 2, '0' );
+    res.setHeader( 'Content-Type', 'text/csv; charset=utf-8' );
+    res.setHeader( 'Content-Disposition', `attachment; filename="billing-${ year }-${ monthStr }.csv"` );
+    res.send( '\uFEFF' + csv ); // BOM for Excel Chinese support
+  } catch ( e ) { res.status( 500 ).json( { error: e.message } ); }
+} );
+
 export default router;
+
 

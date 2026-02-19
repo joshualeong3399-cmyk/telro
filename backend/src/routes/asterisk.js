@@ -8,6 +8,19 @@ import logger from '../utils/logger.js';
 const router = express.Router();
 
 /**
+ * POST /api/asterisk/reconnect
+ * 手动触发 AMI 重连（重置计数器）
+ */
+router.post( '/reconnect', auth, async ( req, res ) => {
+    try {
+        amiClient.forceReconnect();
+        res.json( { success: true, message: '正在重连 Asterisk AMI...' } );
+    } catch ( err ) {
+        res.status( 500 ).json( { success: false, message: err.message } );
+    }
+} );
+
+/**
  * GET /api/asterisk/status
  * 返回 AMI 连接状态
  */
@@ -24,6 +37,7 @@ router.get('/status', auth, async (req, res) => {
       connected: amiClient.isConnected,
       asteriskVersion,
       reconnectAttempts: amiClient.reconnectAttempts,
+        host: `${ process.env.ASTERISK_HOST || 'localhost' }:${ process.env.ASTERISK_PORT || 5038 }`,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

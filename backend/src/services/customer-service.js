@@ -206,6 +206,52 @@ class CustomerService {
     }
   }
 
+  // 删除客户
+  async deleteCustomer( customerId ) {
+    try {
+      const customer = await Customer.findByPk( customerId );
+      if ( !customer ) {
+        throw new Error( `Customer not found: ${ customerId }` );
+      }
+      await customer.destroy();
+      logger.info( `🗑️  Customer deleted: ${ customerId }` );
+      return { success: true };
+    } catch ( error ) {
+      logger.error( 'Failed to delete customer:', error.message );
+      throw error;
+    }
+  }
+
+  // 批量导入客户
+  async importCustomers( records ) {
+    let imported = 0;
+    const errors = [];
+    for ( const record of records ) {
+      try {
+        if ( !record.phoneNumber ) continue;
+        const existing = await Customer.findOne( { where: { phoneNumber: record.phoneNumber } } );
+        if ( !existing ) {
+          await Customer.create( {
+            phoneNumber: record.phoneNumber,
+            name: record.name || '',
+            email: record.email,
+            company: record.company,
+            industry: record.industry,
+            region: record.region,
+            tags: record.tags || [],
+            source: record.source || 'import',
+            status: 'new',
+          } );
+          imported++;
+        }
+      } catch ( err ) {
+        errors.push( { phone: record.phoneNumber, error: err.message } );
+      }
+    }
+    logger.info( `📥 Imported ${ imported } customers` );
+    return { success: true, imported, errors };
+  }
+
   // 统计客户状态
   async getCustomerStats() {
     try {

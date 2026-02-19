@@ -9,13 +9,18 @@ class AsteriskAMIClient extends EventEmitter {
     this.ami = null;
     this.isConnected = false;
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 10;
-    this.reconnectInterval = 3000;
+    this.maxReconnectAttempts = 999; // effectively unlimited; use forceReconnect() to reset
+    this.baseInterval = 5000;   // 5s base
+    this.maxInterval = 60000;  // cap at 60s
+    this._reconnecting = false;  // guard: prevent concurrent reconnect schedules
+    this._reconnectTimer = null;
+    this._stopped = false;
   }
 
   async connect() {
+    this._reconnecting = false; // clear guard at start of each attempt
     return new Promise((resolve, reject) => {
-      let settled = false; // prevent resolve/reject being called twice
+      let settled = false;
 
       const settle = ( fn, val ) => {
         if ( settled ) return;
@@ -23,11 +28,16 @@ class AsteriskAMIClient extends EventEmitter {
         fn( val );
       };
 
-      // Set a connection timeout so the promise rejects quickly when host is unreachable
+      // Destroy any previous AMI instance before creating a new one
+      if ( this.ami ) {
+        try { this.ami.disconnect(); } catch { /* ignore */ }
+        this.ami = null;
+      }
+
       const timeout = setTimeout( () => {
         settle( reject, new Error( `AMI connection timeout (${ asteriskConfig.host }:${ asteriskConfig.port })` ) );
-        this.scheduleReconnect();
-      }, 10000 );
+        this._scheduleReconnect();
+      }, 8000 );
 
       this.ami = new asteriskManager(
         asteriskConfig.port,
@@ -42,6 +52,7 @@ class AsteriskAMIClient extends EventEmitter {
         logger.info('✅ Connected to Asterisk AMI');
         this.isConnected = true;
         this.reconnectAttempts = 0;
+        this._stopped = false;
         this.setupEventHandlers();
         this.emit('connected');
         settle( resolve );
@@ -52,33 +63,47 @@ class AsteriskAMIClient extends EventEmitter {
         logger.warn( '⚠️  AMI Connection Error:', err.message );
         this.isConnected = false;
         settle( reject, err );
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.scheduleReconnect();
-        }
+        // scheduleReconnect is guarded by _reconnecting flag — only one timer at a time
+        this._scheduleReconnect();
       });
 
       this.ami.on('close', () => {
-        logger.warn('⚠️  AMI Connection Closed');
+        // Only log if we were connected (not on every failed attempt)
+        if ( this.isConnected ) logger.warn( '⚠️  AMI Connection Closed' );
         this.isConnected = false;
         this.emit('disconnected');
         settle( reject, new Error( 'AMI connection closed' ) );
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.scheduleReconnect();
-        }
+        this._scheduleReconnect();
       });
     });
   }
 
-  scheduleReconnect() {
+  _scheduleReconnect() {
+    if ( this._stopped ) return;
+    if ( this._reconnecting ) return; // already scheduled — don't double-schedule
+    this._reconnecting = true;
     this.reconnectAttempts++;
-    logger.info(
-      `🔄 Reconnecting... (Attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`
-    );
-    setTimeout(() => {
-      this.connect().catch((err) => {
-        logger.error('Reconnection failed:', err.message);
-      });
-    }, this.reconnectInterval);
+
+    // Exponential backoff: 5s, 10s, 20s, … capped at 60s
+    const delay = Math.min( this.baseInterval * Math.pow( 1.5, Math.min( this.reconnectAttempts - 1, 8 ) ), this.maxInterval );
+
+    if ( this.reconnectAttempts % 5 === 1 || this.reconnectAttempts <= 3 ) {
+      logger.info( `🔄 Asterisk 重连中... (第 ${ this.reconnectAttempts } 次，${ Math.round( delay / 1000 ) }s 后重试)` );
+    }
+
+    this._reconnectTimer = setTimeout( () => {
+      this.connect().catch( () => { /* handled inside connect() */ } );
+    }, delay );
+  }
+
+  /** 手动强制重连（重置计数器）*/
+  forceReconnect() {
+    this._stopped = false;
+    this._reconnecting = false;
+    this.reconnectAttempts = 0;
+    if ( this._reconnectTimer ) { clearTimeout( this._reconnectTimer ); this._reconnectTimer = null; }
+    logger.info( '🔄 手动触发 Asterisk 重连...' );
+    return this.connect().catch( () => { /* will retry automatically */ } );
   }
 
   setupEventHandlers() {
@@ -381,8 +406,11 @@ class AsteriskAMIClient extends EventEmitter {
   }
 
   disconnect() {
+    this._stopped = true;
+    this._reconnecting = false;
+    if ( this._reconnectTimer ) { clearTimeout( this._reconnectTimer ); this._reconnectTimer = null; }
     if (this.ami) {
-      this.ami.disconnect();
+      try { this.ami.disconnect(); } catch { /* ignore */ }
       this.isConnected = false;
     }
   }

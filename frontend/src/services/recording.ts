@@ -30,8 +30,8 @@ export const recordingAPI = {
     api.delete(`/recordings/${id}`),
   
   archive: (id: string) =>
-    api.post(`/recordings/${id}/archive`, {}),
+    api.patch(`/recordings/${id}/archive`, {}),
   
   getStats: () =>
-    api.get('/recordings/stats'),
+    api.get('/recordings/stats/summary'),
 };

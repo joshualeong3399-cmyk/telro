@@ -55,6 +55,16 @@ router.put('/:customerId', auth, async (req, res) => {
   }
 });
 
+// 删除客户
+router.delete( '/:customerId', auth, async ( req, res ) => {
+  try {
+    const result = await customerService.deleteCustomer( req.params.customerId );
+    res.json( result );
+  } catch ( error ) {
+    res.status( 404 ).json( { success: false, message: error.message } );
+  }
+} );
+
 // 添加标签
 router.post('/:customerId/tags', auth, async (req, res) => {
   try {
@@ -78,6 +88,20 @@ router.delete('/:customerId/tags/:tag', auth, async (req, res) => {
     res.status(400).json({ success: false, message: error.message });
   }
 });
+
+// 批量导入客户
+router.post( '/import', auth, async ( req, res ) => {
+  try {
+    const { records } = req.body;
+    if ( !Array.isArray( records ) ) {
+      return res.status( 400 ).json( { success: false, message: 'records must be an array' } );
+    }
+    const result = await customerService.importCustomers( records );
+    res.json( result );
+  } catch ( error ) {
+    res.status( 400 ).json( { success: false, message: error.message } );
+  }
+} );
 
 // 获取跟进客户
 router.get('/followup/list', auth, async (req, res) => {

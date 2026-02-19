@@ -33,7 +33,7 @@ export const billingAPI = {
     api.get(`/billing/trend/${extensionId}`, { params }),
   
   generateInvoice: (params: { year: number; month: number; extensionId?: string }) =>
-    api.post('/billing/invoice', params),
+    api.post('/billing/invoice/generate', params),
   
   exportReport: (params: { year: number; month: number }) =>
     api.get('/billing/export', { params, responseType: 'blob' }),

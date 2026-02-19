@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Card, Row, Col, Button, Badge, Tabs, Spin, Alert, message, Divider, Space, Typography } from 'antd';
+import { Card, Row, Col, Button, Badge, Tabs, Spin, Alert, message, Divider, Space, Typography, Tag } from 'antd';
 import {
-  SyncOutlined, ApiOutlined, EyeOutlined, CheckCircleOutlined, CloseCircleOutlined,
+  SyncOutlined, ApiOutlined, EyeOutlined, ReloadOutlined,
 } from '@ant-design/icons';
 import api from '@/services/api';
 
@@ -11,6 +11,7 @@ interface AsteriskStatus {
   connected: boolean;
   asteriskVersion: string | null;
   reconnectAttempts: number;
+  host?: string;
 }
 
 interface Configs {
@@ -22,6 +23,7 @@ interface Configs {
 const AsteriskManagement: React.FC = () => {
   const [status, setStatus] = useState<AsteriskStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(false);
+  const [reconnectLoading, setReconnectLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [configs, setConfigs] = useState<Configs | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -35,6 +37,17 @@ const AsteriskManagement: React.FC = () => {
     } catch (e: any) {
       message.error('获取状态失败: ' + (e.response?.data?.message || e.message));
     } finally { setLoadingStatus(false); }
+  };
+
+  const handleReconnect = async () => {
+    setReconnectLoading(true);
+    try {
+      await api.post('/asterisk/reconnect');
+      message.info('🔄 正在尝试重连 Asterisk AMI，请稍等几秒后刷新状态...');
+      setTimeout(fetchStatus, 4000);
+    } catch (e: any) {
+      message.error('重连失败: ' + (e.response?.data?.message || e.message));
+    } finally { setReconnectLoading(false); }
   };
 
   const handleSync = async () => {
@@ -121,7 +134,8 @@ const AsteriskManagement: React.FC = () => {
             <Spin spinning={loadingStatus}>
               {status ? (
                 <>
-                  <div style={{ marginBottom: 12 }}>
+                  {/* 连接状态 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
                     <Badge
                       status={status.connected ? 'success' : 'error'}
                       text={
@@ -131,14 +145,51 @@ const AsteriskManagement: React.FC = () => {
                       }
                     />
                   </div>
+
+                  {/* 连接信息 */}
+                  <div style={{ marginBottom: 8 }}>
+                    <Text type="secondary">连接地址：</Text>
+                    <Tag>{status.host || 'localhost:5038'}</Tag>
+                  </div>
+
                   {status.asteriskVersion && (
-                    <Paragraph><Text type="secondary">版本: </Text>{status.asteriskVersion}</Paragraph>
+                    <div style={{ marginBottom: 8 }}>
+                      <Text type="secondary">版本：</Text>
+                      <Text>{status.asteriskVersion}</Text>
+                    </div>
                   )}
+
+                  {/* 未连接时的提示 */}
                   {!status.connected && (
-                    <Alert type="warning" showIcon
-                      message={`正在重连... (已尝试 ${status.reconnectAttempts} 次)`}
-                      description="请检查 Asterisk 是否运行，以及 ASTERISK_HOST / ASTERISK_USER / ASTERISK_SECRET 配置是否正确。"
-                    />
+                    <>
+                      <Alert
+                        type="warning"
+                        showIcon
+                        style={{ marginBottom: 12 }}
+                        message={
+                          status.reconnectAttempts > 0
+                            ? `后台正在重连（第 ${status.reconnectAttempts} 次尝试，指数退避中）`
+                            : '未连接'
+                        }
+                        description={
+                          <div>
+                            <div>Asterisk 未运行或网络不可达。系统其他功能（数据库、API、前端）正常工作。</div>
+                            <div style={{ marginTop: 4, fontSize: 12, color: '#888' }}>
+                              检查：ASTERISK_HOST / ASTERISK_PORT / ASTERISK_USER / ASTERISK_SECRET 环境变量是否正确
+                            </div>
+                          </div>
+                        }
+                      />
+                      <Button
+                        icon={<ReloadOutlined />}
+                        onClick={handleReconnect}
+                        loading={reconnectLoading}
+                        type="primary"
+                        block
+                      >
+                        立即手动重连
+                      </Button>
+                    </>
                   )}
                 </>
               ) : <Text type="secondary">加载中...</Text>}
