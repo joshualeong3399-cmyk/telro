@@ -3,13 +3,13 @@ version: '3.8'
 services:
   # Asterisk服务
   asterisk:
-    image: asterisk:latest
+    image: andrius/asterisk
     container_name: telro-asterisk
     ports:
-      - "5060:5060/udp"
-      - "5060:5060/tcp"
-      - "5038:5038"
-      - "8088:8088"
+      - "5060:5060/udp"           # SIP UDP 信令
+      - "5060:5060/tcp"           # SIP TCP 信令
+      - "5061:5061/tcp"           # SIP TLS
+      - "10000-20000:10000-20000/udp"  # RTP 媒体端口 [citation:3][citation:6]
     volumes:
       - ./asterisk-config:/etc/asterisk
       - asterisk-logs:/var/log/asterisk
