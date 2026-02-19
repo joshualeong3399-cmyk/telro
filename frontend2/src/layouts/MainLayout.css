@@ -1,0 +1,99 @@
+/* ── Logo ── */
+.layout-logo {
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 0 16px;
+  color: #fff;
+  overflow: hidden;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  transition: padding 0.2s;
+}
+
+.layout-logo--collapsed {
+  padding: 0;
+  justify-content: center;
+}
+
+.layout-logo__icon {
+  font-size: 22px;
+  color: #1677ff;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.layout-logo__text {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: #fff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── 顶栏 ── */
+.layout-header {
+  padding: 0 16px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 1px 4px rgba(0, 21, 41, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.layout-header__collapse-btn {
+  font-size: 16px !important;
+  width: 48px;
+  height: 48px;
+}
+
+.layout-header__right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.layout-header__icon-btn {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.layout-header__user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.layout-header__user:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.layout-header__user-info {
+  display: flex;
+  align-items: center;
+}
+
+.layout-header__username {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.85);
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
