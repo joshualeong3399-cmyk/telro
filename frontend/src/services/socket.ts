@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+// Use current origin when VITE_API_URL is empty (for nginx proxy)
+const API_BASE = import.meta.env.VITE_API_URL || window.location.origin;
 
 let socket: Socket | null = null;
 

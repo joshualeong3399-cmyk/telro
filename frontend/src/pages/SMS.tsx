@@ -34,7 +34,7 @@ const { Sider, Content } = Layout;
 const { TextArea } = Input;
 const { Title, Text } = Typography;
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const BASE = import.meta.env.VITE_API_URL || '';
 
 interface SmsMessage {
   id: string;

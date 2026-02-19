@@ -7,7 +7,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, CodeOutline
 import type { ColumnsType } from 'antd/es/table';
 import ivrService, { IVR, IvrOption } from '@/services/ivr';
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000';
+const BASE = import.meta.env.VITE_API_URL || '';
 
 const DEST_TYPES = [
   { label: '分机', value: 'extension' },

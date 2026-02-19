@@ -8,8 +8,8 @@ RUN npm ci
 COPY . .
 
 # Accept build-time env vars for Vite
-ARG VITE_API_URL=http://localhost/api
-ARG VITE_WS_URL=http://localhost
+ARG VITE_API_URL=
+ARG VITE_WS_URL=
 ARG VITE_ASTERISK_HOST=localhost
 ENV VITE_API_URL=$VITE_API_URL \
     VITE_WS_URL=$VITE_WS_URL \

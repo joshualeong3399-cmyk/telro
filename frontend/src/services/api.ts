@@ -1,8 +1,10 @@
 import axios, { AxiosInstance } from 'axios';
 import Cookie from 'js-cookie';
 
+// Use relative path '/api' when VITE_API_URL is empty (for nginx proxy)
+const apiBase = import.meta.env.VITE_API_URL || '';
 const api: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
+  baseURL: apiBase ? `${apiBase}/api` : '/api',
   timeout: 10000,
 });
 
