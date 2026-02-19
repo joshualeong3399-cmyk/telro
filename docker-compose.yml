@@ -1,0 +1,81 @@
+version: '3.9'
+
+# ============================================================
+# Telro — Docker Compose
+# Asterisk runs on the HOST (not in Docker).
+# Backend connects to it via host.docker.internal (or your IP).
+# ============================================================
+
+services:
+
+  # ── Backend (Node.js API + Socket.io) ───────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: telro-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"   # HTTP API
+      - "3001:3001"   # Socket.io (if on separate port; harmless if same)
+    volumes:
+      - telro-data:/app/data                      # SQLite database
+      - telro-audio:/app/uploads/audio            # Uploaded audio files
+      - telro-logs:/app/logs                      # Application logs
+      # Mount host Asterisk dirs so config-sync & recordings work:
+      - /etc/asterisk:/etc/asterisk               # Asterisk config (r/w)
+      - /var/spool/asterisk/monitor:/app/recordings  # Call recordings
+      - /var/lib/asterisk/sounds/custom:/app/sounds  # Custom sound files
+    extra_hosts:
+      - "host.docker.internal:host-gateway"       # Reach host Asterisk AMI
+    healthcheck:
+      test: ["CMD", "node", "-e",
+             "require('http').get('http://localhost:3000/health',(r)=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ── Frontend (React SPA via Nginx) ──────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_URL=/api          # Relative — proxied by Nginx
+        - VITE_WS_URL=              # Empty → same origin WS
+    container_name: telro-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/index.html"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
+volumes:
+  telro-data:
+    driver: local
+  telro-audio:
+    driver: local
+  telro-logs:
+    driver: local

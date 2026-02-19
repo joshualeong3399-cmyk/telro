@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  telro-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: telro-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - VITE_API_BASE_URL=http://backend:3000/api
+    depends_on:
+      - telro-backend
+    networks:
+      - telro-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  telro-backend:
+    build:
+      context: ./src
+      dockerfile: ../Dockerfile
+    container_name: telro-backend
+    ports:
+      - "3000:3000"
+      - "5038:5038"
+      - "8088:8088"
+    environment:
+      - NODE_ENV=production
+      - ASTERISK_HOST=asterisk
+      - ASTERISK_PORT=5038
+      - ASTERISK_USER=manager
+      - ASTERISK_SECRET=secret123
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-change-in-production}
+      - DATABASE_URL=sqlite:./database.sqlite
+    depends_on:
+      - asterisk
+      - redis
+    networks:
+      - telro-network
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  asterisk:
+    image: asterisk:latest
+    container_name: telro-asterisk
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060"
+      - "5061:5061"
+      - "5038:5038"
+    environment:
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./asterisk/etc:/etc/asterisk
+      - ./asterisk/var:/var/lib/asterisk
+    networks:
+      - telro-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    container_name: telro-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - telro-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  nginx-reverse-proxy:
+    image: nginx:alpine
+    container_name: telro-nginx
+    ports:
+      - "8080:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - telro-frontend
+      - telro-backend
+    networks:
+      - telro-network
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+
+networks:
+  telro-network:
+    driver: bridge

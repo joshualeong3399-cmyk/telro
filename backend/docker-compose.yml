@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # Asterisk服务
+  asterisk:
+    image: asterisk:latest
+    container_name: telro-asterisk
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "5038:5038"
+      - "8088:8088"
+    volumes:
+      - ./asterisk-config:/etc/asterisk
+      - asterisk-logs:/var/log/asterisk
+      - asterisk-spool:/var/spool/asterisk
+    environment:
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - telro-network
+
+  # Telro应用服务
+  telro:
+    build: .
+    container_name: telro-app
+    ports:
+      - "3000:3000"
+    depends_on:
+      - asterisk
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./recordings:/app/recordings
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - ASTERISK_HOST=asterisk
+      - ASTERISK_PORT=5038
+      - ASTERISK_USER=admin
+      - ASTERISK_SECRET=amp111
+      - DATABASE_PATH=/app/data/telro.db
+      - RECORDING_PATH=/app/recordings
+      - JWT_SECRET=your-secure-secret-key
+      - LOG_LEVEL=info
+    restart: unless-stopped
+    networks:
+      - telro-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Redis（可选，用于实时通知）
+  redis:
+    image: redis:7-alpine
+    container_name: telro-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks:
+      - telro-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  asterisk-logs:
+    driver: local
+  asterisk-spool:
+    driver: local
+  redis-data:
+    driver: local
+
+networks:
+  telro-network:
+    driver: bridge
