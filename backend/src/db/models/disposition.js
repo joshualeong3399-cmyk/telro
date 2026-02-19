@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../config/database.js';
+import sequelize from '../../config/database.js';
 
 // 话后处置码 —— 坐席通话结束后标记通话结果
 const Disposition = sequelize.define('Disposition', {

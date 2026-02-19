@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../config/database.js';
+import sequelize from '../../config/database.js';
 
 // DNC = Do Not Call 黑名单
 const DNC = sequelize.define('DNC', {

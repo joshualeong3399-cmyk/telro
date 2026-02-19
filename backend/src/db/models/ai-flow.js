@@ -1,5 +1,5 @@
 import { DataTypes } from 'sequelize';
-import sequelize from '../config/database.js';
+import sequelize from '../../config/database.js';
 
 // AI Flow: sequence of steps to execute automatically when a campaign call is answered
 // Steps are stored as JSON array:
