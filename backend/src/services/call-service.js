@@ -172,7 +172,7 @@ class CallService {
             attributes: ['id', 'number', 'name'],
           },
           {
-            association: 'recording',
+            association: 'recordingFile',
             attributes: ['id', 'filename', 'duration'],
           },
         ],

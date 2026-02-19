@@ -37,7 +37,7 @@ CallRecord.belongsTo(Extension, { foreignKey: 'fromExtensionId', as: 'fromExtens
 Extension.hasMany(CallRecord, { foreignKey: 'toExtensionId', as: 'inboundCalls' });
 CallRecord.belongsTo(Extension, { foreignKey: 'toExtensionId', as: 'toExtension' });
 
-CallRecord.hasOne(Recording, { foreignKey: 'callRecordId', as: 'recording' });
+CallRecord.hasOne( Recording, { foreignKey: 'callRecordId', as: 'recordingFile' } );
 Recording.belongsTo(CallRecord, { foreignKey: 'callRecordId', as: 'callRecord' });
 
 CallRecord.hasMany(Billing, { foreignKey: 'callRecordId', as: 'billingRecords' });

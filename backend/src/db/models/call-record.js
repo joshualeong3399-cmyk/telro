@@ -62,7 +62,7 @@ const CallRecord = sequelize.define('CallRecord', {
   hangupCause: {
     type: DataTypes.STRING(100),
   },
-  recording: {
+  hasRecording: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
