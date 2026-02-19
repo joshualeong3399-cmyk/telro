@@ -56,7 +56,7 @@ services:
       retries: 3
 
   asterisk:
-    image: asterisk:latest
+    image: andrius/asterisk
     container_name: telro-asterisk
     ports:
       - "5060:5060/udp"
