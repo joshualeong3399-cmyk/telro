@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Layout,
   Menu,
   Table,
   Button,
@@ -31,7 +30,6 @@ import {
 import dayjs from 'dayjs';
 import Cookie from 'js-cookie';
 
-const { Sider, Content } = Layout;
 const { TextArea } = Input;
 const { Title, Text } = Typography;
 
@@ -278,8 +276,9 @@ const SMS: React.FC = () => {
   ];
 
   return (
-    <Layout style={{ background: '#fff', borderRadius: 8, minHeight: 600, overflow: 'hidden' }}>
-      <Sider width={200} style={{ background: '#fafafa', borderRight: '1px solid #f0f0f0' }}>
+    <div style={{ display: 'flex', background: '#fff', borderRadius: 8, minHeight: 600, overflow: 'hidden' }}>
+      {/* 左侧文件夹导航 */}
+      <div style={{ width: 200, background: '#fafafa', borderRight: '1px solid #f0f0f0', flexShrink: 0 }}>
         <div style={{ padding: '16px 16px 8px' }}>
           <Button type="primary" icon={<PlusOutlined />} block onClick={() => setComposeOpen(true)}>
             写短信
@@ -292,9 +291,10 @@ const SMS: React.FC = () => {
           onClick={({ key }) => { setFolder(key); setPage(1); }}
           style={{ background: 'transparent', border: 'none' }}
         />
-      </Sider>
+      </div>
 
-      <Content style={{ padding: 16 }}>
+      {/* 右侧内容区 */}
+      <div style={{ flex: 1, padding: 16, overflow: 'auto' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <Title level={5} style={{ margin: 0 }}>
             <MailOutlined /> {folderLabels[folder]}（{total}）
@@ -311,7 +311,7 @@ const SMS: React.FC = () => {
           pagination={{ current: page, pageSize, total, onChange: (p) => setPage(p), showSizeChanger: false }}
           locale={{ emptyText: <Empty description="暂无短信" /> }}
         />
-      </Content>
+      </div>
 
       {/* 写短信弹窗 */}
       <Modal
@@ -389,7 +389,7 @@ const SMS: React.FC = () => {
           </div>
         )}
       </Drawer>
-    </Layout>
+    </div>
   );
 };
 
