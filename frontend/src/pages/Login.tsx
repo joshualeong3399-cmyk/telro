@@ -16,14 +16,15 @@ const Login: React.FC = () => {
   const onFinish = async (values: any) => {
     setLoading(true);
     try {
-      const response = await authAPI.login({
+      const response: any = await authAPI.login({
         username: values.username,
         password: values.password,
       });
       
-      setUser(response.data.user as any);
-      setToken(response.data.token);
-      Cookie.set('token', response.data.token);
+      // response is already response.data due to axios interceptor
+      setUser(response.user);
+      setToken(response.token);
+      Cookie.set('token', response.token);
       
       message.success('登录成功');
       navigate('/dashboard');
