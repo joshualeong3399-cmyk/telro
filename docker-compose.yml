@@ -1,5 +1,3 @@
-version: '3.9'
-
 # ============================================================
 # Telro — Docker Compose
 # Asterisk runs on the HOST (not in Docker).

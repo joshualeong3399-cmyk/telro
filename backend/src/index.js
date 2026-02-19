@@ -111,12 +111,12 @@ app.use('/api/sms', smsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/audio-files', audioFilesRoutes);
 
-// 健康检查
+// 健康检查 — 始终返回 200，Asterisk 断开不影响健康状态
 app.get('/health', (req, res) => {
-  res.json({
+  res.status( 200 ).json( {
     status: 'ok',
     timestamp: new Date().toISOString(),
-    database: sequelize.authenticate() ? 'connected' : 'disconnected',
+    uptime: process.uptime(),
     asterisk: amiClient.isConnected ? 'connected' : 'disconnected',
   });
 });
@@ -220,31 +220,35 @@ async function initialize() {
     await sequelize.authenticate();
     logger.info('✅ Database connected');
 
-    // 连接Asterisk
-    logger.info('☎️  Connecting to Asterisk...');
-    await amiClient.connect();
-    logger.info('✅ Asterisk connected');
+    // 先启动服务器，Asterisk 在后台异步连接（连接失败不影响启动）
+    const PORT = process.env.PORT || 3000;
+    server.listen( PORT, () => {
+      logger.info( `✅ Server running on http://localhost:${ PORT }` );
+      logger.info( `🔌 WebSocket ready on ws://localhost:${ PORT }` );
+      logger.info( `📚 API Documentation: http://localhost:${ PORT }/api/docs` );
+      logger.info( `❤️  Health Check: http://localhost:${ PORT }/health` );
+    } );
 
     // 初始化事件处理器（注入 Socket.io）
     new EventHandlers(io);
     logger.info('✅ Event handlers initialized');
 
-    // 在 Asterisk 主配置文件中添加 #include 指令（首次启动有效）
-    await asteriskConfigService.setupIncludes();
+    // 连接 Asterisk（异步，失败只警告，后台持续重连）
+    logger.info( '☎️  Connecting to Asterisk (non-blocking)...' );
+    amiClient.connect()
+      .then( async () => {
+        logger.info( '✅ Asterisk connected' );
+        await asteriskConfigService.setupIncludes().catch( e =>
+          logger.warn( '⚠️  setupIncludes 失败:', e.message )
+        );
+        asteriskConfigService.syncAll()
+          .then( () => logger.info( '✅ 初始 Asterisk 配置同步完成' ) )
+          .catch( e => logger.warn( '⚠️  初始 Asterisk 配置同步失败:', e.message ) );
+      } )
+      .catch( e => {
+        logger.warn( `⚠️  Asterisk 暂时不可用 (${ e.message })，系统已启动，将在后台持续重连...` );
+      } );
 
-    // 将当前数据库配置同步到 Asterisk
-    asteriskConfigService.syncAll()
-      .then(() => logger.info('✅ 初始 Asterisk 配置同步完成'))
-      .catch(e  => logger.warn('⚠️  初始 Asterisk 配置同步失败:', e.message));
-
-    // 启动服务器
-    const PORT = process.env.PORT || 3000;
-    server.listen(PORT, () => {
-      logger.info(`✅ Server running on http://localhost:${PORT}`);
-      logger.info(`🔌 WebSocket ready on ws://localhost:${PORT}`);
-      logger.info(`📚 API Documentation: http://localhost:${PORT}/api/docs`);
-      logger.info(`❤️  Health Check: http://localhost:${PORT}/health`);
-    });
   } catch (error) {
     logger.error('❌ Initialization failed:', error.message);
     process.exit(1);

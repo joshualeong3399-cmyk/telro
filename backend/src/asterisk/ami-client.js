@@ -15,6 +15,20 @@ class AsteriskAMIClient extends EventEmitter {
 
   async connect() {
     return new Promise((resolve, reject) => {
+      let settled = false; // prevent resolve/reject being called twice
+
+      const settle = ( fn, val ) => {
+        if ( settled ) return;
+        settled = true;
+        fn( val );
+      };
+
+      // Set a connection timeout so the promise rejects quickly when host is unreachable
+      const timeout = setTimeout( () => {
+        settle( reject, new Error( `AMI connection timeout (${ asteriskConfig.host }:${ asteriskConfig.port })` ) );
+        this.scheduleReconnect();
+      }, 10000 );
+
       this.ami = new asteriskManager(
         asteriskConfig.port,
         asteriskConfig.host,
@@ -24,28 +38,30 @@ class AsteriskAMIClient extends EventEmitter {
       );
 
       this.ami.on('connect', () => {
+        clearTimeout( timeout );
         logger.info('✅ Connected to Asterisk AMI');
         this.isConnected = true;
         this.reconnectAttempts = 0;
         this.setupEventHandlers();
         this.emit('connected');
-        resolve();
+        settle( resolve );
       });
 
       this.ami.on('error', (err) => {
-        logger.error('❌ AMI Connection Error:', err.message);
+        clearTimeout( timeout );
+        logger.warn( '⚠️  AMI Connection Error:', err.message );
         this.isConnected = false;
-        this.emit('error', err);
+        settle( reject, err );
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.scheduleReconnect();
         }
-        reject(err);
       });
 
       this.ami.on('close', () => {
         logger.warn('⚠️  AMI Connection Closed');
         this.isConnected = false;
         this.emit('disconnected');
+        settle( reject, new Error( 'AMI connection closed' ) );
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
           this.scheduleReconnect();
         }
