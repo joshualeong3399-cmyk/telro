@@ -10,8 +10,8 @@ async function migrate() {
   try {
     console.log('🔄 Starting database migration...');
     
-    // 同步所有模型到数据库
-    await sequelize.sync({ alter: process.env.NODE_ENV === 'development' });
+    // 同步所有模型到数据库 - force: false 保留数据, alter: true 更新结构
+    await sequelize.sync( { force: false, alter: true } );
     
     console.log('✅ Database migration completed successfully!');
     console.log(`📍 Database location: ${process.env.DATABASE_PATH || './data/telro.db'}`);
