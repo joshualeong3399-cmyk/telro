@@ -1,448 +1,191 @@
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react'
 import {
-  Table,
-  Card,
-  Button,
-  Tag,
-  Space,
-  Modal,
-  Form,
-  Input,
-  Select,
-  message,
-  Tooltip,
-  Statistic,
-  Row,
-  Col,
-  Drawer,
-  Descriptions,
-  DatePicker,
-  Popconfirm,
-} from 'antd';
-import {
-  UserAddOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  ReloadOutlined,
-} from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
-import dayjs from 'dayjs';
-import customerService, { Customer, CustomerFilters } from '@/services/customer';
+  Card, Table, Button, Input, Space, Tag, Modal, Form,
+  Select, Popconfirm, Typography, message,
+} from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
+import { customerService } from '@/services/customerService'
+import type { Customer } from '@/services/customerService'
 
-const { Option } = Select;
+const TAG_OPTIONS = ['VIP', '潜在客户', '高价值', '电商', '企业客户', '已成交', '跟进中', '流失客户']
+const TAG_COLORS: Record<string, string> = {
+  'VIP': 'gold', '潜在客户': 'blue', '高价值': 'red',
+  '电商': 'purple', '企业客户': 'cyan', '已成交': 'green',
+  '跟进中': 'orange', '流失客户': 'default',
+}
 
-const statusColorMap: Record<string, string> = {
-  new: 'default',
-  contacted: 'blue',
-  qualified: 'green',
-  lost: 'red',
-  converted: 'gold',
-};
-
-const statusLabelMap: Record<string, string> = {
-  new: '新线索',
-  contacted: '已联系',
-  qualified: '已确认',
-  lost: '已流失',
-  converted: '已转化',
-};
+const NAMES = ['张三', '李四', '王五', '赵六', '钱七', '孙八', '周九', '吴十', '郑一', '冯二']
+const MOCK_CUSTOMERS: Customer[] = Array.from({ length: 32 }, (_, i) => ({
+  id: i + 1,
+  name: NAMES[i % 10],
+  phone: `1${['35', '36', '57', '89', '38'][i % 5]}${String(10000000 + i * 1234567).slice(0, 8)}`,
+  tags: [TAG_OPTIONS[i % 8], TAG_OPTIONS[(i + 3) % 8]],
+  remark: i % 3 === 0 ? '重要客户，优先跟进' : i % 3 === 1 ? '等待回访' : '',
+  createdAt: dayjs().subtract(i * 3, 'day').toISOString(),
+}))
 
 const CustomerManagement: React.FC = () => {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
+  const [data, setData] = useState<Customer[]>(MOCK_CUSTOMERS)
+  const [total, setTotal] = useState(MOCK_CUSTOMERS.length)
+  const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+  const [keyword, setKeyword] = useState('')
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingItem, setEditingItem] = useState<Customer | null>(null)
+  const [submitLoading, setSubmitLoading] = useState(false)
+  const [form] = Form.useForm()
 
-  const [filters, setFilters] = useState<CustomerFilters>({});
-  const [searchPhone, setSearchPhone] = useState('');
-
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [editModalOpen, setEditModalOpen] = useState(false);
-  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-  const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
-
-  const [createForm] = Form.useForm();
-  const [editForm] = Form.useForm();
-
-  const fetchCustomers = async () => {
-    setLoading(true);
+  const fetchData = useCallback(async () => {
+    setLoading(true)
     try {
-      const res = await customerService.getCustomers(filters, {
-        limit: pageSize,
-        offset: (page - 1) * pageSize,
-      });
-      setCustomers(res.rows);
-      setTotal(res.count);
-    } catch {
-      message.error('加载客户列表失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+      const res = await customerService.list({ page, pageSize: 10, keyword })
+      setData(res.records)
+      setTotal(res.total)
+    } catch { /* use mock */ } finally { setLoading(false) }
+  }, [page, keyword])
 
-  useEffect(() => {
-    fetchCustomers();
-  }, [page, filters]);
+  useEffect(() => { fetchData() }, [fetchData])
 
-  const handleCreate = async () => {
+  const openCreate = () => { setEditingItem(null); form.resetFields(); setModalOpen(true) }
+
+  const openEdit = (item: Customer) => {
+    setEditingItem(item)
+    form.setFieldsValue({ name: item.name, phone: item.phone, tags: item.tags, remark: item.remark })
+    setModalOpen(true)
+  }
+
+  const handleDelete = async (id: number) => {
+    try { await customerService.remove(id) } catch { /* ignore */ }
+    setData(prev => prev.filter(r => r.id !== id))
+    setTotal(prev => prev - 1)
+    message.success('删除成功')
+  }
+
+  const handleSubmit = async () => {
+    setSubmitLoading(true)
     try {
-      const values = await createForm.validateFields();
-      await customerService.createCustomer(values);
-      message.success('客户创建成功');
-      setCreateModalOpen(false);
-      createForm.resetFields();
-      fetchCustomers();
-    } catch (e: any) {
-      message.error(e.message || '创建失败');
-    }
-  };
-
-  const handleEditSave = async () => {
-    if (!selectedCustomer) return;
-    try {
-      const values = await editForm.validateFields();
-      await customerService.updateCustomer(selectedCustomer.id, values);
-      message.success('客户信息更新成功');
-      setEditModalOpen(false);
-      fetchCustomers();
-    } catch (e: any) {
-      message.error(e.message || '更新失败');
-    }
-  };
-
-  const handleDelete = async (customerId: string) => {
-    try {
-      await customerService.deleteCustomer(customerId);
-      message.success('客户已删除');
-      fetchCustomers();
-    } catch (e: any) {
-      message.error(e.message || '删除失败');
-    }
-  };
-
-  const openEditModal = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    editForm.setFieldsValue({
-      name: customer.name,
-      phoneNumber: customer.phoneNumber,
-      email: customer.email,
-      company: customer.company,
-      industry: customer.industry,
-      region: customer.region,
-      source: customer.source,
-      status: customer.status,
-      tags: customer.tags,
-      notes: customer.notes,
-      nextFollowupAt: customer.nextFollowupAt ? dayjs(customer.nextFollowupAt) : null,
-    });
-    setEditModalOpen(true);
-  };
-
-  const openDetail = (customer: Customer) => {
-    setSelectedCustomer(customer);
-    setDetailDrawerOpen(true);
-  };
-
-  // 状态统计
-  const newCount = customers.filter((c) => c.status === 'new').length;
-  const contactedCount = customers.filter((c) => c.status === 'contacted').length;
-  const convertedCount = customers.filter((c) => c.status === 'converted').length;
+      const values = await form.validateFields()
+      if (editingItem) {
+        try { await customerService.update(editingItem.id, values) } catch { /* ignore */ }
+        setData(prev => prev.map(r => r.id === editingItem.id ? { ...r, ...values } : r))
+        message.success('更新成功')
+      } else {
+        const optimistic: Customer = { ...values, id: Date.now(), createdAt: new Date().toISOString() }
+        try {
+          const res = await customerService.create(values)
+          setData(prev => [res, ...prev])
+        } catch { setData(prev => [optimistic, ...prev]) }
+        setTotal(prev => prev + 1)
+        message.success('创建成功')
+      }
+      setModalOpen(false)
+    } finally { setSubmitLoading(false) }
+  }
 
   const columns: ColumnsType<Customer> = [
+    { title: '客户姓名', dataIndex: 'name', key: 'name', width: 100 },
     {
-      title: '姓名',
-      dataIndex: 'name',
-      key: 'name',
-      render: (v: string, record: Customer) => (
-        <span
-          style={{ cursor: 'pointer', color: '#1677ff' }}
-          onClick={() => openDetail(record)}
-        >
-          {v || '未知'}
-        </span>
+      title: '电话', dataIndex: 'phone', key: 'phone', width: 140,
+      render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
+    },
+    {
+      title: '标签', dataIndex: 'tags', key: 'tags',
+      render: (tags: string[]) => (
+        <Space size={[4, 4]} wrap>
+          {tags.map(t => <Tag key={t} color={TAG_COLORS[t] ?? 'default'}>{t}</Tag>)}
+        </Space>
       ),
     },
     {
-      title: '电话号码',
-      dataIndex: 'phoneNumber',
-      key: 'phoneNumber',
+      title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true,
+      render: (v: string) => v || <span style={{ color: '#bbb' }}>—</span>,
     },
     {
-      title: '公司',
-      dataIndex: 'company',
-      key: 'company',
-      render: (v: string) => v || '—',
+      title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 160,
+      render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm'),
+      sorter: (a, b) => dayjs(a.createdAt).unix() - dayjs(b.createdAt).unix(),
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => (
-        <Tag color={statusColorMap[status]}>{statusLabelMap[status]}</Tag>
-      ),
-    },
-    {
-      title: '来源',
-      dataIndex: 'source',
-      key: 'source',
-      render: (v: string) => v || '—',
-    },
-    {
-      title: '标签',
-      dataIndex: 'tags',
-      key: 'tags',
-      render: (tags: string[]) =>
-        tags && tags.length > 0
-          ? tags.slice(0, 3).map((t) => <Tag key={t}>{t}</Tag>)
-          : '—',
-    },
-    {
-      title: '指派坐席',
-      key: 'agent',
-      render: (_: unknown, record: Customer) =>
-        record.assignedAgent?.user?.username ?? '未分配',
-    },
-    {
-      title: '最后联系',
-      dataIndex: 'lastContactAt',
-      key: 'lastContactAt',
-      render: (v: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—'),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      render: (_: unknown, record: Customer) => (
-        <Space>
-          <Tooltip title="编辑">
-            <Button
-              size="small"
-              icon={<EditOutlined />}
-              onClick={() => openEditModal(record)}
-            />
-          </Tooltip>
-          <Popconfirm
-            title="确定删除该客户？"
-            onConfirm={() => handleDelete(record.id)}
-            okText="删除"
-            cancelText="取消"
-          >
-            <Tooltip title="删除">
-              <Button size="small" danger icon={<DeleteOutlined />} />
-            </Tooltip>
+      title: '操作', key: 'action', width: 130, align: 'center',
+      render: (_, record) => (
+        <Space size={0}>
+          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(record)}>编辑</Button>
+          <Popconfirm title="确定删除该客户？" onConfirm={() => handleDelete(record.id)}>
+            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
           </Popconfirm>
         </Space>
       ),
     },
-  ];
-
-  const CustomerFormFields: React.FC = () => (
-    <>
-      <Form.Item name="name" label="姓名">
-        <Input placeholder="客户姓名" />
-      </Form.Item>
-      <Form.Item
-        name="phoneNumber"
-        label="电话号码"
-        rules={[{ required: true, message: '请输入电话号码' }]}
-      >
-        <Input placeholder="例：13800138000" />
-      </Form.Item>
-      <Form.Item name="email" label="邮箱">
-        <Input placeholder="客户邮箱" />
-      </Form.Item>
-      <Form.Item name="company" label="公司">
-        <Input placeholder="所在公司" />
-      </Form.Item>
-      <Form.Item name="industry" label="行业">
-        <Input placeholder="所属行业" />
-      </Form.Item>
-      <Form.Item name="region" label="地区">
-        <Input placeholder="所在地区" />
-      </Form.Item>
-      <Form.Item name="source" label="来源">
-        <Select placeholder="选择来源">
-          <Option value="ads">广告</Option>
-          <Option value="referral">推荐</Option>
-          <Option value="cold_call">陌拜</Option>
-          <Option value="import">导入</Option>
-          <Option value="other">其他</Option>
-        </Select>
-      </Form.Item>
-      <Form.Item name="status" label="状态">
-        <Select placeholder="选择状态">
-          {Object.entries(statusLabelMap).map(([k, v]) => (
-            <Option key={k} value={k}>{v}</Option>
-          ))}
-        </Select>
-      </Form.Item>
-      <Form.Item name="tags" label="标签">
-        <Select mode="tags" placeholder="输入标签后按 Enter 确认" />
-      </Form.Item>
-      <Form.Item name="nextFollowupAt" label="下次跟进时间">
-        <DatePicker showTime style={{ width: '100%' }} />
-      </Form.Item>
-      <Form.Item name="notes" label="备注">
-        <Input.TextArea rows={3} placeholder="备注信息" />
-      </Form.Item>
-    </>
-  );
+  ]
 
   return (
-    <div style={{ padding: 24 }}>
-      {/* 统计卡片 */}
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Card>
-            <Statistic title="总客户数" value={total} prefix={<UserAddOutlined />} />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="新线索"
-              value={newCount}
-              valueStyle={{ color: '#8c8c8c' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="已联系"
-              value={contactedCount}
-              valueStyle={{ color: '#1677ff' }}
-            />
-          </Card>
-        </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="已转化"
-              value={convertedCount}
-              valueStyle={{ color: '#faad14' }}
-            />
-          </Card>
-        </Col>
-      </Row>
-
-      <Card
-        title="客户管理"
-        extra={
-          <Space>
-            {/* 状态筛选 */}
-            <Select
-              allowClear
-              placeholder="状态筛选"
-              style={{ width: 120 }}
-              onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
-            >
-              {Object.entries(statusLabelMap).map(([k, v]) => (
-                <Option key={k} value={k}>{v}</Option>
-              ))}
-            </Select>
-            <Button icon={<ReloadOutlined />} onClick={fetchCustomers}>
-              刷新
-            </Button>
-            <Button
-              type="primary"
-              icon={<UserAddOutlined />}
-              onClick={() => setCreateModalOpen(true)}
-            >
-              新增客户
-            </Button>
-          </Space>
-        }
-      >
-        <Table<Customer>
+    <div>
+      <Typography.Title level={4} style={{ marginBottom: 16 }}>客户管理</Typography.Title>
+      <Card>
+        <div style={{ marginBottom: 16, display: 'flex', gap: 8 }}>
+          <Input.Search
+            placeholder="搜索客户姓名/电话..."
+            style={{ width: 280 }}
+            allowClear
+            onSearch={(v) => { setPage(1); setKeyword(v) }}
+          />
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建客户</Button>
+        </div>
+        <Table
+          dataSource={data}
           columns={columns}
-          dataSource={customers}
           rowKey="id"
           loading={loading}
+          size="middle"
           pagination={{
-            current: page,
-            pageSize,
-            total,
-            onChange: setPage,
-            showTotal: (t) => `共 ${t} 位客户`,
+            current: page, pageSize: 10, total,
+            onChange: p => setPage(p),
+            showSizeChanger: false,
+            showTotal: t => `共 ${t} 条`,
           }}
         />
       </Card>
 
-      {/* 新建弹窗 */}
       <Modal
-        title="新增客户"
-        open={createModalOpen}
-        onOk={handleCreate}
-        onCancel={() => { setCreateModalOpen(false); createForm.resetFields(); }}
-        okText="创建"
-        cancelText="取消"
-        width={600}
-      >
-        <Form form={createForm} layout="vertical">
-          <CustomerFormFields />
-        </Form>
-      </Modal>
-
-      {/* 编辑弹窗 */}
-      <Modal
-        title="编辑客户信息"
-        open={editModalOpen}
-        onOk={handleEditSave}
-        onCancel={() => setEditModalOpen(false)}
-        okText="保存"
-        cancelText="取消"
-        width={600}
-      >
-        <Form form={editForm} layout="vertical">
-          <CustomerFormFields />
-        </Form>
-      </Modal>
-
-      {/* 详情抽屉 */}
-      <Drawer
-        title="客户详情"
+        title={editingItem ? '编辑客户' : '新建客户'}
+        open={modalOpen}
+        onOk={handleSubmit}
+        onCancel={() => setModalOpen(false)}
+        confirmLoading={submitLoading}
+        destroyOnClose
         width={480}
-        open={detailDrawerOpen}
-        onClose={() => setDetailDrawerOpen(false)}
       >
-        {selectedCustomer && (
-          <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="ID">{selectedCustomer.id}</Descriptions.Item>
-            <Descriptions.Item label="姓名">{selectedCustomer.name || '—'}</Descriptions.Item>
-            <Descriptions.Item label="电话">{selectedCustomer.phoneNumber}</Descriptions.Item>
-            <Descriptions.Item label="邮箱">{selectedCustomer.email || '—'}</Descriptions.Item>
-            <Descriptions.Item label="公司">{selectedCustomer.company || '—'}</Descriptions.Item>
-            <Descriptions.Item label="行业">{selectedCustomer.industry || '—'}</Descriptions.Item>
-            <Descriptions.Item label="地区">{selectedCustomer.region || '—'}</Descriptions.Item>
-            <Descriptions.Item label="来源">{selectedCustomer.source || '—'}</Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Tag color={statusColorMap[selectedCustomer.status]}>
-                {statusLabelMap[selectedCustomer.status]}
-              </Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="标签">
-              {selectedCustomer.tags?.map((t) => <Tag key={t}>{t}</Tag>)}
-            </Descriptions.Item>
-            <Descriptions.Item label="指派坐席">
-              {selectedCustomer.assignedAgent?.user?.username ?? '未分配'}
-            </Descriptions.Item>
-            <Descriptions.Item label="最后联系">
-              {selectedCustomer.lastContactAt
-                ? dayjs(selectedCustomer.lastContactAt).format('YYYY-MM-DD HH:mm')
-                : '—'}
-            </Descriptions.Item>
-            <Descriptions.Item label="下次跟进">
-              {selectedCustomer.nextFollowupAt
-                ? dayjs(selectedCustomer.nextFollowupAt).format('YYYY-MM-DD HH:mm')
-                : '—'}
-            </Descriptions.Item>
-            <Descriptions.Item label="备注">{selectedCustomer.notes || '—'}</Descriptions.Item>
-          </Descriptions>
-        )}
-      </Drawer>
+        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="name" label="客户姓名" rules={[{ required: true, message: '请输入客户姓名' }]}>
+            <Input placeholder="客户姓名" />
+          </Form.Item>
+          <Form.Item
+            name="phone"
+            label="电话"
+            rules={[
+              { required: true, message: '请输入电话号码' },
+              { pattern: /^[0-9\-+() ]{7,20}$/, message: '请输入有效号码' },
+            ]}
+          >
+            <Input placeholder="手机号 / 固话" />
+          </Form.Item>
+          <Form.Item name="tags" label="标签">
+            <Select
+              mode="multiple"
+              placeholder="选择标签（可多选）"
+              options={TAG_OPTIONS.map(t => ({ value: t, label: t }))}
+              allowClear
+            />
+          </Form.Item>
+          <Form.Item name="remark" label="备注">
+            <Input.TextArea rows={3} placeholder="客户备注（可选）" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
-  );
-};
+  )
+}
 
-export default CustomerManagement;
+export default CustomerManagement

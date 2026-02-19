@@ -1,227 +1,215 @@
-/**
- * CampaignQueueAlert.tsx
- * Shows a floating notification when a campaign call is waiting in the agent queue.
- * Any logged-in agent can: Accept (answer), Reject (pass), or Transfer (to extension).
- *
- * Listens for Socket.io events:
- *   campaign:queue-incoming  → show alert
- *   campaign:queue-dismissed → hide alert (another agent accepted)
- *   campaign:call-accepted   → hide alert
- */
-import React, { useEffect, useState, useRef } from 'react';
-import { Modal, Button, Input, Space, Typography, Tag, notification, Badge } from 'antd';
-import {
-  PhoneOutlined,
-  CloseOutlined,
-  SwapOutlined,
-  UserOutlined,
-} from '@ant-design/icons';
-import { io, Socket } from 'socket.io-client';
-import { useAuthStore } from '@/store/authStore';
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { Modal, Button, Space, Typography, Tag, Descriptions } from 'antd'
+import { PhoneOutlined, CloseOutlined } from '@ant-design/icons'
+import { socketService } from '@/services/socket'
+import type { IncomingCallPayload } from '@/services/socket'
 
-const { Text, Title } = Typography;
-const BASE = import.meta.env.VITE_API_URL || '';
+const { Text, Title } = Typography
 
-interface QueueNotification {
-  taskId: string;
-  queueId: string;
-  queueName: string;
-  channelId: string;
-  contactNumber: string;
-  contactName?: string;
-  outboundCallerId?: string;
-  timestamp: string;
+// ── 使用 Web Audio API 合成简单来电提示音（无需外部文件）──────────────────
+function playRingtone(): () => void {
+  let stopped = false
+  const AudioCtx = window.AudioContext || (window as Window & typeof globalThis & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+  if (!AudioCtx) return () => {}
+
+  const ctx = new AudioCtx()
+
+  const beep = (startTime: number, freq: number, duration: number) => {
+    if (stopped) return
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain)
+    gain.connect(ctx.destination)
+    osc.frequency.value = freq
+    osc.type = 'sine'
+    gain.gain.setValueAtTime(0.3, startTime)
+    gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration)
+    osc.start(startTime)
+    osc.stop(startTime + duration)
+  }
+
+  // Ring pattern: two short beeps, pause, repeat
+  const pattern = () => {
+    if (stopped) return
+    const now = ctx.currentTime
+    beep(now,       880, 0.25)
+    beep(now + 0.3, 880, 0.25)
+    // repeat every 2s
+  }
+
+  pattern()
+  const timer = setInterval(() => { if (!stopped) pattern() }, 2000)
+
+  return () => {
+    stopped = true
+    clearInterval(timer)
+    ctx.close().catch(() => {})
+  }
 }
 
+// ── Component ─────────────────────────────────────────────────────────────────
 const CampaignQueueAlert: React.FC = () => {
-  const [incoming, setIncoming] = useState<QueueNotification | null>(null);
-  const [transferMode, setTransferMode] = useState(false);
-  const [transferExt, setTransferExt] = useState('');
-  const [acting, setActing] = useState(false);
-  const socketRef = useRef<Socket | null>(null);
-  const user = useAuthStore((s) => s.user);
+  const [call, setCall] = useState<IncomingCallPayload | null>(null)
+  const [visible, setVisible] = useState(false)
+  const [elapsed, setElapsed] = useState(0)
+  const stopRingtoneRef = useRef<(() => void) | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
+  // ── 清理函数 ─────────────────────────────────────────────────────────────
+  const cleanup = useCallback(() => {
+    stopRingtoneRef.current?.()
+    stopRingtoneRef.current = null
+    if (timerRef.current) {
+      clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+    setElapsed(0)
+  }, [])
+
+  const closeModal = useCallback(() => {
+    cleanup()
+    setVisible(false)
+    setCall(null)
+  }, [cleanup])
+
+  // ── 监听来电事件 ──────────────────────────────────────────────────────────
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    const socket = io(BASE, {
-      transports: ['websocket', 'polling'],
-      auth: { token },
-    });
-    socketRef.current = socket;
+    const handleIncoming = (data: IncomingCallPayload) => {
+      cleanup()
+      setCall(data)
+      setElapsed(data.queueTime ?? 0)
+      setVisible(true)
 
-    socket.on('campaign:queue-incoming', (data: QueueNotification) => {
-      setIncoming(data);
-      setTransferMode(false);
-      setTransferExt('');
-      // Also show a browser notification
-      notification.info({
-        message: '来电排队',
-        description: `${data.contactName || data.contactNumber} 正在等待接听`,
-        duration: 8,
-        placement: 'topRight',
-        icon: <PhoneOutlined style={{ color: '#1677ff' }} />,
-      });
-    });
+      // 响铃
+      stopRingtoneRef.current = playRingtone()
 
-    socket.on('campaign:queue-dismissed', () => {
-      setIncoming(null);
-    });
-
-    socket.on('campaign:call-accepted', () => {
-      setIncoming(null);
-    });
-
-    return () => { socket.disconnect(); };
-  }, []);
-
-  const apiFetch = async (path: string, body?: object) => {
-    const token = localStorage.getItem('token');
-    const res = await fetch(`${BASE}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: res.statusText }));
-      throw new Error(err.error || res.statusText);
+      // 计时：显示排队时长
+      timerRef.current = setInterval(() => {
+        setElapsed((prev) => prev + 1)
+      }, 1000)
     }
-    return res.json();
-  };
 
-  const handleAccept = async () => {
-    if (!incoming) return;
-    // Use the user's own extension number
-    const myExt = (user as any)?.extensionNumber || (user as any)?.extension?.number;
-    if (!myExt) {
-      notification.error({ message: '接听失败', description: '您的账号未绑定分机号，无法接听' });
-      return;
+    socketService.on('campaign:incoming-call', handleIncoming)
+    return () => {
+      socketService.off('campaign:incoming-call', handleIncoming)
+      cleanup()
     }
-    setActing(true);
-    try {
-      await apiFetch(`/api/campaigns/tasks/${incoming.taskId}/accept`, { extensionNumber: myExt });
-      notification.success({ message: '接听成功', description: `通话已转接到您的分机 ${myExt}` });
-      setIncoming(null);
-    } catch (e: any) {
-      notification.error({ message: '接听失败', description: e.message });
-    } finally {
-      setActing(false);
-    }
-  };
+  }, [cleanup])
 
-  const handleReject = async () => {
-    if (!incoming) return;
-    const myExt = (user as any)?.extensionNumber || (user as any)?.extension?.number || '';
-    setActing(true);
-    try {
-      await apiFetch(`/api/campaigns/tasks/${incoming.taskId}/reject`, { extensionNumber: myExt });
-      setIncoming(null);
-    } catch {}
-    setActing(false);
-  };
+  // ── 操作 ──────────────────────────────────────────────────────────────────
+  const handleAnswer = () => {
+    if (!call) return
+    socketService.emit('campaign:answer', call.callId)
+    closeModal()
+  }
 
-  const handleTransfer = async () => {
-    if (!incoming || !transferExt) return;
-    setActing(true);
-    try {
-      await apiFetch(`/api/campaigns/tasks/${incoming.taskId}/accept`, { extensionNumber: transferExt });
-      notification.success({ message: '转接成功', description: `已转接到分机 ${transferExt}` });
-      setIncoming(null);
-    } catch (e: any) {
-      notification.error({ message: '转接失败', description: e.message });
-    } finally {
-      setActing(false);
-      setTransferMode(false);
-    }
-  };
+  const handleReject = () => {
+    if (!call) return
+    socketService.emit('campaign:reject', call.callId)
+    closeModal()
+  }
 
-  if (!incoming) return null;
+  const fmtElapsed = (s: number) => {
+    const m = Math.floor(s / 60)
+    const sec = s % 60
+    return m > 0 ? `${m}m ${String(sec).padStart(2, '0')}s` : `${s}s`
+  }
 
   return (
     <Modal
-      open
+      open={visible}
       closable={false}
-      maskClosable={false}
-      centered
-      width={400}
       footer={null}
-      styles={{ body: { padding: 24 } }}
+      centered
+      width={420}
+      maskClosable={false}
+      styles={{
+        mask: { background: 'rgba(0,0,0,0.6)' },
+        content: { borderTop: '4px solid #52c41a', borderRadius: 8 },
+      }}
     >
-      <div style={{ textAlign: 'center' }}>
-        <Badge status="processing" color="blue" />
-        <Title level={4} style={{ marginTop: 8 }}>
-          <PhoneOutlined /> 来电等待接听
-        </Title>
-
-        <div style={{ background: '#f6f8ff', borderRadius: 8, padding: '16px 20px', marginBottom: 16, textAlign: 'left' }}>
-          <div style={{ marginBottom: 6 }}>
-            <Text type="secondary">客户号码：</Text>
-            <Text strong style={{ fontSize: 16 }}>{incoming.contactNumber}</Text>
-          </div>
-          {incoming.contactName && (
-            <div style={{ marginBottom: 6 }}>
-              <Text type="secondary">客户姓名：</Text>
-              <Text>{incoming.contactName}</Text>
+      {call && (
+        <div style={{ padding: '8px 0' }}>
+          {/* 来电标题 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+            <div
+              style={{
+                width: 44, height: 44, borderRadius: '50%',
+                background: '#f6ffed', border: '2px solid #52c41a',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                animation: 'pulse 1.2s ease-in-out infinite',
+              }}
+            >
+              <PhoneOutlined style={{ fontSize: 20, color: '#52c41a' }} />
             </div>
-          )}
-          {incoming.outboundCallerId && (
-            <div style={{ marginBottom: 6 }}>
-              <Text type="secondary">外显号码：</Text>
-              <Tag color="blue">{incoming.outboundCallerId}</Tag>
+            <div>
+              <Title level={5} style={{ margin: 0 }}>群呼来电</Title>
+              {call.campaignName && (
+                <Tag color="blue" style={{ marginTop: 2 }}>{call.campaignName}</Tag>
+              )}
             </div>
-          )}
-          <div>
-            <Text type="secondary">活动队列：</Text>
-            <Text>{incoming.queueName}</Text>
+            <Text
+              type="secondary"
+              style={{ marginLeft: 'auto', fontSize: 12, fontFamily: 'monospace' }}
+            >
+              排队 {fmtElapsed(elapsed)}
+            </Text>
           </div>
-        </div>
 
-        {!transferMode ? (
-          <Space size={12}>
+          {/* 来电信息 */}
+          <Descriptions column={1} size="small" bordered style={{ marginBottom: 20 }}>
+            <Descriptions.Item label="客户姓名">
+              <Text strong style={{ fontSize: 15 }}>{call.customerName}</Text>
+            </Descriptions.Item>
+            <Descriptions.Item label="电话号码">
+              <Text copyable style={{ fontFamily: 'monospace', fontSize: 14 }}>
+                {call.phone}
+              </Text>
+            </Descriptions.Item>
+            {call.remark && (
+              <Descriptions.Item label="备注">
+                <Text type="secondary">{call.remark}</Text>
+              </Descriptions.Item>
+            )}
+          </Descriptions>
+
+          {/* 操作按钮 */}
+          <Space style={{ width: '100%', justifyContent: 'center' }} size={16}>
             <Button
               type="primary"
-              size="large"
               icon={<PhoneOutlined />}
-              onClick={handleAccept}
-              loading={acting}
-              style={{ background: '#52c41a', borderColor: '#52c41a' }}
+              size="large"
+              style={{
+                background: '#52c41a', borderColor: '#52c41a',
+                minWidth: 140, height: 44, fontSize: 16,
+              }}
+              onClick={handleAnswer}
             >
-              接听
+              接 听
             </Button>
             <Button
-              size="large"
-              icon={<SwapOutlined />}
-              onClick={() => setTransferMode(true)}
-              disabled={acting}
-            >
-              转接
-            </Button>
-            <Button
-              size="large"
               danger
               icon={<CloseOutlined />}
+              size="large"
+              style={{ minWidth: 140, height: 44, fontSize: 16 }}
               onClick={handleReject}
-              loading={acting}
             >
-              拒绝
+              拒 绝
             </Button>
           </Space>
-        ) : (
-          <Space.Compact style={{ width: '100%' }}>
-            <Input
-              prefix={<UserOutlined />}
-              placeholder="输入分机号"
-              value={transferExt}
-              onChange={(e) => setTransferExt(e.target.value)}
-              onPressEnter={handleTransfer}
-              autoFocus
-            />
-            <Button type="primary" onClick={handleTransfer} loading={acting}>转接</Button>
-            <Button onClick={() => setTransferMode(false)}>取消</Button>
-          </Space.Compact>
-        )}
-      </div>
-    </Modal>
-  );
-};
+        </div>
+      )}
 
-export default CampaignQueueAlert;
+      {/* Pulse animation */}
+      <style>{`
+        @keyframes pulse {
+          0%   { box-shadow: 0 0 0 0 rgba(82,196,26,0.5); }
+          70%  { box-shadow: 0 0 0 10px rgba(82,196,26,0); }
+          100% { box-shadow: 0 0 0 0 rgba(82,196,26,0); }
+        }
+      `}</style>
+    </Modal>
+  )
+}
+
+export default CampaignQueueAlert

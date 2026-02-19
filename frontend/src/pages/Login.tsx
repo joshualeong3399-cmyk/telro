@@ -1,91 +1,107 @@
-import React, { useState } from 'react';
-import { Form, Input, Button, Card, message, Spin } from 'antd';
-import { PhoneOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
-import { authAPI } from '@/services/auth';
-import { useAuthStore } from '@/store/authStore';
-import Cookie from 'js-cookie';
-import './Login.css';
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Button, Card, Form, Input, message, Typography } from 'antd'
+import { LockOutlined, UserOutlined, PhoneOutlined } from '@ant-design/icons'
+import { authService } from '@/services/authService'
+import { useAuthStore } from '@/store/authStore'
+
+const { Text } = Typography
+
+interface LoginForm {
+  username: string
+  password: string
+}
 
 const Login: React.FC = () => {
-  const [loading, setLoading] = useState(false);
-  const navigate = useNavigate();
-  const setUser = useAuthStore((s) => s.setUser);
-  const setToken = useAuthStore((s) => s.setToken);
+  const [loading, setLoading] = useState(false)
+  const navigate = useNavigate()
+  const loginSuccess = useAuthStore((s) => s.loginSuccess)
 
-  const onFinish = async (values: any) => {
-    setLoading(true);
+  const onFinish = async (values: LoginForm) => {
+    setLoading(true)
     try {
-      const response: any = await authAPI.login({
-        username: values.username,
-        password: values.password,
-      });
-      
-      // Use response.data since axios interceptor returns full response
-      setUser(response.data.user);
-      setToken(response.data.token);
-      Cookie.set('token', response.data.token);
-      
-      message.success('登录成功');
-      navigate('/dashboard');
-    } catch (error: any) {
-      message.error(error.message || '登录失败');
+      const res = await authService.login(values.username, values.password)
+      // 持久化 token + user 到 Cookie，更新 Zustand 状态
+      loginSuccess(res)
+      message.success('登录成功')
+      navigate('/dashboard', { replace: true })
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response?.data?.message ??
+        '用户名或密码错误'
+      message.error(msg)
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
-    <div className="login-container">
-      <Card className="login-card">
-        <div className="login-header">
-          <PhoneOutlined className="login-icon" />
-          <h1>Telro 电销系统</h1>
-          <p>Telemarketing System</p>
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'linear-gradient(135deg, #1677ff 0%, #0958d9 100%)',
+      }}
+    >
+      <Card
+        style={{ width: 400, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
+        styles={{ body: { padding: '40px 32px 24px' } }}
+      >
+        {/* Logo 区域 */}
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: '50%',
+              background: '#1677ff',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 12,
+            }}
+          >
+            <PhoneOutlined style={{ fontSize: 24, color: '#fff' }} />
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: '#1a1a1a' }}>Telro 呼叫中心</div>
+          <Text type="secondary" style={{ fontSize: 13 }}>Call Center Management System</Text>
         </div>
 
-        <Form
+        <Form<LoginForm>
           name="login"
           onFinish={onFinish}
-          layout="vertical"
-          requiredMark={false}
+          autoComplete="off"
+          size="large"
         >
           <Form.Item
             name="username"
-            label="用户名"
             rules={[{ required: true, message: '请输入用户名' }]}
           >
-            <Input placeholder="输入用户名或邮箱" size="large" />
+            <Input prefix={<UserOutlined />} placeholder="用户名" />
           </Form.Item>
-
           <Form.Item
             name="password"
-            label="密码"
             rules={[{ required: true, message: '请输入密码' }]}
           >
-            <Input.Password placeholder="输入密码" size="large" />
+            <Input.Password prefix={<LockOutlined />} placeholder="密码" />
           </Form.Item>
-
-          <Form.Item>
-            <Button
-              type="primary"
-              htmlType="submit"
-              size="large"
-              block
-              loading={loading}
-            >
-              登录
+          <Form.Item style={{ marginBottom: 0 }}>
+            <Button type="primary" htmlType="submit" block loading={loading} size="large">
+              登 录
             </Button>
           </Form.Item>
         </Form>
 
-        <div className="login-footer">
-          <p>默认账户: admin / admin123</p>
-          <p>首次使用？联系管理员</p>
+        <div style={{ marginTop: 20, textAlign: 'center' }}>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            © 2026 Telro · All rights reserved
+          </Text>
         </div>
       </Card>
     </div>
-  );
-};
+  )
+}
 
-export default Login;
+export default Login

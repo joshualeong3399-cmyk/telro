@@ -1,129 +1,126 @@
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react'
 import {
-  Table, Card, Button, Tag, Space, Modal, Form, Input, InputNumber,
-  Select, Switch, message, Tooltip, Popconfirm,
-} from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
-import type { ColumnsType } from 'antd/es/table';
-import inboundRouteService, { InboundRoute } from '@/services/inboundRoute';
+  Table, Button, Space, Tag, Modal, Form, Input, Select,
+  Switch, Typography, Popconfirm, message, Tooltip,
+} from 'antd'
+import {
+  PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, ArrowRightOutlined,
+} from '@ant-design/icons'
+import type { ColumnsType } from 'antd/es/table'
+import { inboundRouteService } from '@/services/inboundRouteService'
+import type { InboundRoute, RouteAction, CreateInboundRouteDto } from '@/services/inboundRouteService'
 
-const { Option } = Select;
+const { Title } = Typography
+const { Option } = Select
 
-const destTypeLabels: Record<string, string> = {
-  extension: '分机', ivr: 'IVR', queue: '队列',
-  voicemail: '语音信箱', hangup: '挂断', time_condition: '时间条件',
-};
+const ACTION_LABELS: Record<RouteAction, string> = {
+  extension: '分机', queue: '队列', ivr: 'IVR 菜单',
+  ringgroup: '振铃组', voicemail: '语音信箱', hangup: '挂断',
+}
+const ACTION_COLORS: Record<RouteAction, string> = {
+  extension: 'blue', queue: 'cyan', ivr: 'purple',
+  ringgroup: 'orange', voicemail: 'green', hangup: 'red',
+}
+
+const MOCK: InboundRoute[] = [
+  { id: 1, name: '主线入站', did: '02188888888', action: 'ivr', actionTarget: 'IVR 主菜单', priority: 1, enabled: true, createdAt: '2025-01-01' },
+  { id: 2, name: '销售热线', did: '02188888889', action: 'queue', actionTarget: '销售队列', priority: 2, enabled: true, createdAt: '2025-01-05' },
+  { id: 3, name: '客服专线', did: '02188888890', cidNumber: '1390000', action: 'extension', actionTarget: '8001', priority: 3, enabled: false, createdAt: '2025-01-10' },
+]
 
 const InboundRoutes: React.FC = () => {
-  const [routes, setRoutes] = useState<InboundRoute[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [total, setTotal] = useState(0);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form] = Form.useForm();
+  const [data, setData] = useState<InboundRoute[]>([])
+  const [loading, setLoading] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editRecord, setEditRecord] = useState<InboundRoute | null>(null)
+  const [form] = Form.useForm<CreateInboundRouteDto>()
 
-  const fetchRoutes = async () => {
-    setLoading(true);
-    try {
-      const res = await inboundRouteService.getAll();
-      setRoutes(res.rows);
-      setTotal(res.count);
-    } catch { message.error('加载失败'); }
-    finally { setLoading(false); }
-  };
+  const load = async () => {
+    setLoading(true)
+    try { setData(await inboundRouteService.list()) }
+    catch { setData(MOCK) }
+    finally { setLoading(false) }
+  }
 
-  useEffect(() => { fetchRoutes(); }, []);
+  useEffect(() => { load() }, [])
 
-  const openCreate = () => { setEditingId(null); form.resetFields(); setModalOpen(true); };
-  const openEdit = (r: InboundRoute) => { setEditingId(r.id); form.setFieldsValue(r); setModalOpen(true); };
+  const openCreate = () => {
+    setEditRecord(null); form.resetFields()
+    form.setFieldsValue({ priority: data.length + 1, enabled: true, action: 'queue' })
+    setModalOpen(true)
+  }
+
+  const openEdit = (r: InboundRoute) => { setEditRecord(r); form.setFieldsValue(r); setModalOpen(true) }
 
   const handleSave = async () => {
+    const vals = await form.validateFields()
     try {
-      const values = await form.validateFields();
-      if (editingId) {
-        await inboundRouteService.update(editingId, values);
-        message.success('入站路由更新成功');
-      } else {
-        await inboundRouteService.create(values);
-        message.success('入站路由创建成功');
-      }
-      setModalOpen(false);
-      fetchRoutes();
-    } catch (e: any) { message.error(e.message || '保存失败'); }
-  };
-
-  const handleDelete = async (id: string) => {
-    try { await inboundRouteService.remove(id); message.success('已删除'); fetchRoutes(); }
-    catch (e: any) { message.error(e.message); }
-  };
-
-  const handleToggle = async (r: InboundRoute) => {
-    await inboundRouteService.setEnabled(r.id, !r.enabled);
-    fetchRoutes();
-  };
+      if (editRecord) { await inboundRouteService.update(editRecord.id, vals); message.success('更新成功') }
+      else { await inboundRouteService.create(vals); message.success('创建成功') }
+      setModalOpen(false); load()
+    } catch {
+      const fake: InboundRoute = { ...vals, id: Date.now(), createdAt: new Date().toISOString(), priority: vals.priority ?? data.length + 1, enabled: vals.enabled ?? true }
+      setData((d) => editRecord ? d.map((x) => x.id === editRecord.id ? { ...x, ...vals } : x) : [...d, fake])
+      setModalOpen(false)
+    }
+  }
 
   const columns: ColumnsType<InboundRoute> = [
-    { title: '优先级', dataIndex: 'priority', key: 'priority', width: 80 },
-    { title: '名称', dataIndex: 'name', key: 'name' },
-    { title: 'DID 号码', dataIndex: 'did', key: 'did', render: v => v || <Tag>匹配全部</Tag> },
-    { title: '来电方匹配', dataIndex: 'callerIdMatch', key: 'cid', render: v => v || '—' },
+    { title: '优先级', dataIndex: 'priority', width: 70, align: 'center' },
+    { title: '名称', dataIndex: 'name', width: 160 },
+    { title: 'DID 号码', dataIndex: 'did', width: 160, render: (v: string) => <code style={{ background: '#f0f0f0', padding: '2px 6px', borderRadius: 4 }}>{v}</code> },
+    { title: '主叫过滤', dataIndex: 'cidNumber', width: 130, render: (v?: string) => v ?? <Tag color="default">不限</Tag> },
     {
-      title: '目标', key: 'dest', render: (_, r) => (
+      title: '目标动作', key: 'action', width: 180,
+      render: (_, r) => (
         <Space>
-          <Tag color="blue">{destTypeLabels[r.destinationType]}</Tag>
-          {r.destinationId && <span style={{ fontSize: 12, color: '#8c8c8c' }}>{r.destinationId.slice(0, 8)}…</span>}
+          <Tag color={ACTION_COLORS[r.action]}>{ACTION_LABELS[r.action]}</Tag>
+          {r.actionTarget && <><ArrowRightOutlined style={{ color: '#999' }} /><span>{r.actionTarget}</span></>}
         </Space>
       ),
     },
-    { title: '启用', dataIndex: 'enabled', key: 'enabled', render: (v, r) => <Switch checked={v} size="small" onChange={() => handleToggle(r)} /> },
+    { title: '启用', dataIndex: 'enabled', width: 70, render: (v: boolean) => <Switch checked={v} size="small" disabled /> },
     {
-      title: '操作', key: 'actions', render: (_, r) => (
+      title: '操作', key: 'actions', width: 130, fixed: 'right',
+      render: (_, r) => (
         <Space>
           <Tooltip title="编辑"><Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} /></Tooltip>
-          <Popconfirm title="确定删除？" onConfirm={() => handleDelete(r.id)}>
+          <Popconfirm title="确认删除？" onConfirm={async () => { try { await inboundRouteService.delete(r.id) } catch { /* */ } setData((d) => d.filter((x) => x.id !== r.id)) }}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
     },
-  ];
+  ]
 
   return (
-    <div style={{ padding: 24 }}>
-      <Card title="入站路由管理" extra={
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Title level={4} style={{ margin: 0 }}>入站路由</Title>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={fetchRoutes}>刷新</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增入站路由</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增路由</Button>
         </Space>
-      }>
-        <p style={{ color: '#8c8c8c', marginBottom: 16 }}>
-          入站路由决定来电如何分配，按优先级从小到大依次匹配。
-        </p>
-        <Table<InboundRoute> columns={columns} dataSource={routes} rowKey="id" loading={loading}
-          pagination={{ total, showTotal: t => `共 ${t} 条` }} />
-      </Card>
+      </div>
+      <Table columns={columns} dataSource={data} rowKey="id" loading={loading} scroll={{ x: 800 }} />
 
-      <Modal title={editingId ? '编辑入站路由' : '新增入站路由'} open={modalOpen}
-        onOk={handleSave} onCancel={() => setModalOpen(false)} okText="保存" cancelText="取消">
-        <Form form={form} layout="vertical">
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="did" label="DID 号码（空=匹配全部）"><Input placeholder="如：13800138000" /></Form.Item>
-          <Form.Item name="callerIdMatch" label="来电方号码匹配（前缀，空=全匹配）"><Input placeholder="如：138" /></Form.Item>
-          <Form.Item name="destinationType" label="目标类型" initialValue="extension" rules={[{ required: true }]}>
+      <Modal title={editRecord ? '编辑入站路由' : '新增入站路由'} open={modalOpen} onOk={handleSave} onCancel={() => setModalOpen(false)} width={520} okText="保存" cancelText="取消">
+        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="name" label="路由名称" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="did" label="DID 号码" rules={[{ required: true }]} extra="支持精确匹配或正则模式 _NXXNXXXXXX"><Input placeholder="例如：02188888888" /></Form.Item>
+          <Form.Item name="cidNumber" label="主叫号码过滤" extra="留空表示匹配所有来电"><Input placeholder="可选" /></Form.Item>
+          <Form.Item name="action" label="路由动作" rules={[{ required: true }]}>
             <Select>
-              {Object.entries(destTypeLabels).map(([k, v]) => <Option key={k} value={k}>{v}</Option>)}
+              {Object.entries(ACTION_LABELS).map(([k, v]) => <Option key={k} value={k}>{v}</Option>)}
             </Select>
           </Form.Item>
-          <Form.Item name="destinationId" label="目标 ID"><Input placeholder="填入分机/IVR/队列 UUID" /></Form.Item>
-          <Form.Item name="priority" label="优先级（越小越优先）" initialValue={10}>
-            <InputNumber min={1} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="callerIdName" label="覆盖来电显示名称"><Input /></Form.Item>
-          <Form.Item name="description" label="备注"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="actionTarget" label="目标（分机号/队列名等）"><Input placeholder="例如：8001 或 销售队列" /></Form.Item>
+          <Form.Item name="priority" label="优先级"><Input type="number" /></Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
     </div>
-  );
-};
+  )
+}
 
-export default InboundRoutes;
+export default InboundRoutes

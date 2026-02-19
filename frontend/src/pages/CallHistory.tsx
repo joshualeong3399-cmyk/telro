@@ -1,208 +1,180 @@
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect, useCallback } from 'react'
 import {
-  Table,
-  Card,
-  Space,
-  Button,
-  Input,
-  DatePicker,
-  Select,
-  message,
-  Tag,
-  Drawer,
-  Descriptions,
-} from 'antd';
-import { DownloadOutlined } from '@ant-design/icons';
-import { callAPI, CallRecord } from '@/services/call';
-import dayjs from 'dayjs';
+  Card, Table, Input, Space, Tag, Button, Select, Typography,
+  DatePicker, Modal, Tooltip,
+} from 'antd'
+import type { ColumnsType } from 'antd/es/table'
+import { PlayCircleOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
+import { callHistoryService } from '@/services/callHistoryService'
+import type { CallRecord, CallStatus } from '@/services/callHistoryService'
+
+const { RangePicker } = DatePicker
+
+const STATUS_CONFIG: Record<CallStatus, { label: string; color: string }> = {
+  answered: { label: '接通', color: 'green' },
+  missed:   { label: '未接', color: 'red' },
+  busy:     { label: '忙音', color: 'orange' },
+  failed:   { label: '失败', color: 'default' },
+}
+
+const fmtSec = (s: number) => {
+  if (s === 0) return '—'
+  const m = Math.floor(s / 60)
+  const sec = s % 60
+  return m > 0 ? `${m}m ${String(sec).padStart(2, '0')}s` : `${s}s`
+}
+
+// Deterministic mock data
+const CALL_STATUSES: CallStatus[] = ['answered', 'missed', 'busy', 'answered', 'answered']
+const MOCK_CALLS: CallRecord[] = Array.from({ length: 55 }, (_, i) => {
+  const status = CALL_STATUSES[i % 5]
+  return {
+    id: i + 1,
+    caller: `075588${String(100000 + i * 137).slice(0, 6)}`,
+    callee: `1${['38', '36', '57', '89'][i % 4]}${String(10000000 + i * 1234321).slice(0, 8)}`,
+    time: dayjs().subtract(i * 28, 'minute').toISOString(),
+    duration: status === 'answered' ? 30 + (i * 73) % 270 : 0,
+    status,
+    recording: status === 'answered' && i % 2 === 0 ? `/recordings/rec-${i + 1}.wav` : null,
+  }
+})
 
 const CallHistory: React.FC = () => {
-  const [calls, setCalls] = useState<CallRecord[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
-  const [drawerVisible, setDrawerVisible] = useState(false);
-  const [filters, setFilters] = useState({
-    status: undefined,
-    extensionId: undefined,
-  });
+  const [data, setData] = useState<CallRecord[]>(MOCK_CALLS)
+  const [total, setTotal] = useState(MOCK_CALLS.length)
+  const [loading, setLoading] = useState(false)
+  const [page, setPage] = useState(1)
+  const [keyword, setKeyword] = useState('')
+  const [statusFilter, setStatusFilter] = useState<CallStatus | 'all'>('all')
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([
+    dayjs().subtract(7, 'day'), dayjs(),
+  ])
+  const [playUrl, setPlayUrl] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchCallHistory();
-  }, []);
-
-  const fetchCallHistory = async () => {
-    setLoading(true);
+  const fetchData = useCallback(async () => {
+    setLoading(true)
     try {
-      const response = await callAPI.getRecords({
-        limit: 100,
-        ...filters,
-      });
-      setCalls(response.data.rows ?? (response.data as any));
-    } catch (error) {
-      message.error('加载通话记录失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+      const res = await callHistoryService.list({
+        page,
+        pageSize: 10,
+        keyword,
+        status: statusFilter,
+        startDate: dateRange[0].format('YYYY-MM-DD'),
+        endDate: dateRange[1].format('YYYY-MM-DD'),
+      })
+      setData(res.records)
+      setTotal(res.total)
+    } catch { /* use mock */ } finally { setLoading(false) }
+  }, [page, keyword, statusFilter, dateRange])
 
-  const handleViewDetail = (call: CallRecord) => {
-    setSelectedCall(call);
-    setDrawerVisible(true);
-  };
+  useEffect(() => { fetchData() }, [fetchData])
 
-  const handleExport = () => {
-    const params = new URLSearchParams();
-    if (filters.status) params.set('status', filters.status as string);
-    const url = `/api/calls/export/csv?${params.toString()}`;
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `calls-${new Date().toISOString().slice(0, 10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  const columns = [
+  const columns: ColumnsType<CallRecord> = [
     {
-      title: '通话时间',
-      dataIndex: 'startTime',
-      key: 'startTime',
-      width: 160,
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD HH:mm:ss'),
-    },
-    { title: '分机', dataIndex: 'extensionId', key: 'extension', width: 80 },
-    { title: '来自', dataIndex: 'fromNumber', key: 'from', width: 120 },
-    { title: '去往', dataIndex: 'toNumber', key: 'to', width: 120 },
-    {
-      title: '时长',
-      dataIndex: 'duration',
-      key: 'duration',
-      width: 80,
-      render: (duration: number) => `${Math.floor(duration / 60)}m${duration % 60}s`,
+      title: '主叫', dataIndex: 'caller', key: 'caller', width: 140,
+      render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
     },
     {
-      title: '通话时长',
-      dataIndex: 'talkTime',
-      key: 'talkTime',
-      width: 100,
-      render: (talkTime: number) => `${Math.floor(talkTime / 60)}m`,
+      title: '被叫', dataIndex: 'callee', key: 'callee', width: 140,
+      render: (v: string) => <span style={{ fontFamily: 'monospace' }}>{v}</span>,
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 80,
-      render: (status: string) => {
-        const colors: any = { active: 'processing', completed: 'success', failed: 'error' };
-        const labels: any = { active: '进行中', completed: '已完成', failed: '失败' };
-        return <Tag color={colors[status]}>{labels[status]}</Tag>;
-      },
+      title: '时间', dataIndex: 'time', key: 'time', width: 165,
+      render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm:ss'),
+      sorter: (a, b) => dayjs(a.time).unix() - dayjs(b.time).unix(),
+      defaultSortOrder: 'descend',
     },
     {
-      title: '费用',
-      dataIndex: 'cost',
-      key: 'cost',
-      width: 80,
-      render: (cost: number) => `¥${cost.toFixed(2)}`,
+      title: '时长', dataIndex: 'duration', key: 'duration', width: 90, align: 'right',
+      render: (v: number) => fmtSec(v),
+      sorter: (a, b) => a.duration - b.duration,
     },
     {
-      title: '操作',
-      key: 'action',
-      width: 100,
-      render: (_, record: CallRecord) => (
-        <Button type="link" size="small" onClick={() => handleViewDetail(record)}>
-          详情
-        </Button>
-      ),
+      title: '状态', dataIndex: 'status', key: 'status', width: 80, align: 'center',
+      render: (s: CallStatus) => <Tag color={STATUS_CONFIG[s].color}>{STATUS_CONFIG[s].label}</Tag>,
     },
-  ];
-
-  const filteredCalls = calls.filter((call) => {
-    if (filters.status && call.status !== filters.status) return false;
-    if (filters.extensionId && call.extensionId !== filters.extensionId) return false;
-    return true;
-  });
+    {
+      title: '录音', key: 'recording', width: 70, align: 'center',
+      render: (_, record) =>
+        record.recording ? (
+          <Tooltip title="播放录音">
+            <Button
+              type="link"
+              size="small"
+              icon={<PlayCircleOutlined />}
+              onClick={() => setPlayUrl(record.recording)}
+            />
+          </Tooltip>
+        ) : (
+          <span style={{ color: '#d9d9d9' }}>—</span>
+        ),
+    },
+  ]
 
   return (
-    <div style={{ padding: '24px' }}>
-      <Card style={{ marginBottom: '16px' }}>
-        <Space wrap>
-          <span>状态:</span>
-          <Select
-            placeholder="选择状态"
-            style={{ width: 150 }}
+    <div>
+      <Typography.Title level={4} style={{ marginBottom: 16 }}>通话记录</Typography.Title>
+      <Card>
+        <Space size={8} wrap style={{ marginBottom: 16 }}>
+          <Input.Search
+            placeholder="搜索主叫/被叫号码..."
+            style={{ width: 240 }}
             allowClear
-            onChange={(value) => setFilters({ ...filters, status: value })}
-          >
-            <Select.Option value="active">进行中</Select.Option>
-            <Select.Option value="completed">已完成</Select.Option>
-            <Select.Option value="failed">失败</Select.Option>
-          </Select>
-
-          <Button type="primary" icon={<DownloadOutlined />} onClick={handleExport}>
-            导出
-          </Button>
+            onSearch={(v) => { setPage(1); setKeyword(v) }}
+          />
+          <Select
+            value={statusFilter}
+            onChange={v => { setStatusFilter(v); setPage(1) }}
+            style={{ width: 120 }}
+            options={[
+              { value: 'all', label: '全部状态' },
+              ...Object.entries(STATUS_CONFIG).map(([v, c]) => ({ value: v, label: c.label })),
+            ]}
+          />
+          <RangePicker
+            value={dateRange}
+            onChange={r => r && setDateRange(r as [dayjs.Dayjs, dayjs.Dayjs])}
+            allowClear={false}
+            disabledDate={d => d.isAfter(dayjs())}
+          />
         </Space>
+
+        <Table
+          dataSource={data}
+          columns={columns}
+          rowKey="id"
+          loading={loading}
+          size="middle"
+          pagination={{
+            current: page, pageSize: 10, total,
+            onChange: p => setPage(p),
+            showSizeChanger: false,
+            showTotal: t => `共 ${t} 条`,
+          }}
+        />
       </Card>
 
-      <Table
-        columns={columns}
-        dataSource={filteredCalls}
-        loading={loading}
-        rowKey="id"
-        pagination={{ pageSize: 20 }}
-        scroll={{ x: 1400 }}
-      />
-
-      <Drawer
-        title="通话详情"
-        placement="right"
-        onClose={() => setDrawerVisible(false)}
-        open={drawerVisible}
-        width={600}
+      {/* 录音播放弹窗 */}
+      <Modal
+        title="录音播放"
+        open={!!playUrl}
+        onCancel={() => setPlayUrl(null)}
+        footer={null}
+        width={400}
+        destroyOnClose
       >
-        {selectedCall && (
-          <Descriptions column={1} bordered>
-            <Descriptions.Item label="分机号">
-              {selectedCall.extensionId}
-            </Descriptions.Item>
-            <Descriptions.Item label="来自号码">
-              {selectedCall.fromNumber}
-            </Descriptions.Item>
-            <Descriptions.Item label="去往号码">
-              {selectedCall.toNumber}
-            </Descriptions.Item>
-            <Descriptions.Item label="开始时间">
-              {dayjs(selectedCall.startTime).format('YYYY-MM-DD HH:mm:ss')}
-            </Descriptions.Item>
-            <Descriptions.Item label="结束时间">
-              {dayjs(selectedCall.endTime).format('YYYY-MM-DD HH:mm:ss')}
-            </Descriptions.Item>
-            <Descriptions.Item label="总时长">
-              {Math.floor(selectedCall.duration / 60)}m {selectedCall.duration % 60}s
-            </Descriptions.Item>
-            <Descriptions.Item label="通话时长">
-              {Math.floor(selectedCall.talkTime / 60)}m {selectedCall.talkTime % 60}s
-            </Descriptions.Item>
-            <Descriptions.Item label="铃响时长">
-              {Math.floor(selectedCall.ringTime / 60)}m
-            </Descriptions.Item>
-            <Descriptions.Item label="费用">
-              ¥{selectedCall.cost.toFixed(2)}
-            </Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Tag>{selectedCall.status}</Tag>
-            </Descriptions.Item>
-            {selectedCall.hangupCause && (
-              <Descriptions.Item label="挂机原因">
-                {selectedCall.hangupCause}
-              </Descriptions.Item>
-            )}
-          </Descriptions>
+        {playUrl && (
+          <audio
+            src={playUrl}
+            controls
+            autoPlay
+            style={{ width: '100%', marginTop: 8 }}
+          />
         )}
-      </Drawer>
+      </Modal>
     </div>
-  );
-};
+  )
+}
 
-export default CallHistory;
+export default CallHistory

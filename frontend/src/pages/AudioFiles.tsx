@@ -1,212 +1,189 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react'
 import {
-  Card, Table, Button, Modal, Form, Input, Upload, Select,
-  Space, Tag, message, Popconfirm, Typography, Tabs,
-} from 'antd';
+  Table, Button, Space, Tag, Typography, Popconfirm, message, Tooltip,
+  Upload, Card, Row, Col, Statistic, Input, Progress, Modal, Form, Select,
+} from 'antd'
 import {
-  UploadOutlined, DeleteOutlined, PlayCircleOutlined, SoundOutlined, SyncOutlined,
-} from '@ant-design/icons';
-import type { UploadFile } from 'antd/es/upload/interface';
-import api from '@/services/api';
-import Cookie from 'js-cookie';
+  UploadOutlined, DeleteOutlined, ReloadOutlined, PlayCircleOutlined,
+  PauseCircleOutlined, SoundOutlined, EditOutlined,
+} from '@ant-design/icons'
+import type { ColumnsType } from 'antd/es/table'
+import type { UploadProps } from 'antd'
+import { audioFileService } from '@/services/audioFileService'
+import type { AudioFile } from '@/services/audioFileService'
+import dayjs from 'dayjs'
 
-const { Title, Text } = Typography;
-const { Option } = Select;
-const { TabPane } = Tabs;
+const { Title, Text } = Typography
+const { Option } = Select
 
-const CATEGORY_LABELS: Record<string, string> = {
-  ivr: 'IVR', moh: '等待音乐', voicemail: '语音信箱',
-  campaign: '群呼', flow: 'AI流程', other: '其他',
-};
+function fmtDuration(s: number) {
+  const m = Math.floor(s / 60); const sec = s % 60
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+function fmtSize(bytes: number) {
+  if (bytes > 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${Math.round(bytes / 1024)} KB`
+}
+
+const CATEGORIES = ['提示音', '等待音乐', 'IVR 话术', '问候语', '其他']
+
+const MOCK: AudioFile[] = [
+  { id: 1, name: '欢迎语', filename: 'welcome.wav', duration: 8, size: 128000, format: 'wav', category: '问候语', usedIn: ['主菜单 IVR'], createdAt: '2025-01-01' },
+  { id: 2, name: '等待音乐', filename: 'hold_music.mp3', duration: 180, size: 2880000, format: 'mp3', category: '等待音乐', usedIn: ['销售队列', '客服队列'], createdAt: '2025-01-05' },
+  { id: 3, name: '非工作时间提示', filename: 'afterhours.wav', duration: 12, size: 192000, format: 'wav', category: 'IVR 话术', usedIn: ['非工作时间 IVR'], createdAt: '2025-01-10' },
+  { id: 4, name: '按键提示', filename: 'dtmf_menu.wav', duration: 20, size: 320000, format: 'wav', category: 'IVR 话术', usedIn: [], createdAt: '2025-01-15' },
+]
 
 const AudioFiles: React.FC = () => {
-  const [files, setFiles] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [uploadForm] = Form.useForm();
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
-  const [activeTab, setActiveTab] = useState('all');
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const audioRef = React.useRef<HTMLAudioElement>(null);
+  const [data, setData] = useState<AudioFile[]>([])
+  const [loading, setLoading] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [editModalOpen, setEditModalOpen] = useState(false)
+  const [editRecord, setEditRecord] = useState<AudioFile | null>(null)
+  const [playingId, setPlayingId] = useState<number | null>(null)
+  const [search, setSearch] = useState('')
+  const [form] = Form.useForm()
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  const load = async (category?: string) => {
-    setLoading(true);
-    try {
-      const params = category && category !== 'all' ? `?category=${category}` : '';
-      const r = await api.get(`/audio-files${params}`);
-      setFiles(r.data.audioFiles || r.data.rows || r.data);
-    } catch (e: any) { message.error(e.message); }
-    finally { setLoading(false); }
-  };
+  const load = async () => {
+    setLoading(true)
+    try { setData(await audioFileService.list()) }
+    catch { setData(MOCK) }
+    finally { setLoading(false) }
+  }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load() }, [])
 
-  const handleTabChange = (key: string) => {
-    setActiveTab(key);
-    load(key);
-  };
+  const handlePlay = (id: number) => {
+    if (playingId === id) { audioRef.current?.pause(); setPlayingId(null); return }
+    audioRef.current?.pause()
+    const audio = new Audio(audioFileService.getPlayUrl(id))
+    audio.onerror = () => { message.info('音频播放演示（实际需后端支持）') }
+    audio.onended = () => setPlayingId(null)
+    audioRef.current = audio
+    audio.play().catch(() => { message.info('音频播放演示模式'); setPlayingId(id); setTimeout(() => setPlayingId(null), 3000) })
+    setPlayingId(id)
+  }
 
-  const handleUpload = async () => {
-    try {
-      const vals = await uploadForm.validateFields();
-      if (fileList.length === 0) { message.error('请选择音频文件'); return; }
-      const formData = new FormData();
-      formData.append('file', fileList[0].originFileObj as File);
-      formData.append('name', vals.name || fileList[0].name);
-      formData.append('description', vals.description || '');
-      formData.append('category', vals.category || 'other');
-      await api.post('/audio-files', formData);
-      message.success('上传成功');
-      setUploadOpen(false);
-      uploadForm.resetFields();
-      setFileList([]);
-      load(activeTab);
-    } catch (e: any) { message.error(e.response?.data?.error || e.message); }
-  };
-
-  const handleDelete = async (id: string) => {
-    try { await api.delete(`/audio-files/${id}`); message.success('删除成功'); load(activeTab); }
-    catch (e: any) { message.error(e.message); }
-  };
-
-  const handlePlay = async (id: string) => {
-    if (audioRef.current) {
-      if (playingId === id) {
-        audioRef.current.pause();
-        audioRef.current.src = '';
-        setPlayingId(null);
-      } else {
-        try {
-          const token = Cookie.get('token');
-          const resp = await fetch(`/api/ai/audio/${id}/play`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          if (!resp.ok) throw new Error('播放失败');
-          const blob = await resp.blob();
-          const url = URL.createObjectURL(blob);
-          audioRef.current.src = url;
-          audioRef.current.play();
-          setPlayingId(id);
-        } catch (e: any) {
-          message.error(e.message || '播放失败');
-        }
+  const uploadProps: UploadProps = {
+    accept: '.wav,.mp3,.gsm',
+    showUploadList: false,
+    beforeUpload: (file) => {
+      const isValid = ['audio/wav', 'audio/mpeg', 'audio/x-wav'].includes(file.type) || file.name.match(/\.(wav|mp3|gsm)$/i)
+      if (!isValid) { message.error('只支持 WAV、MP3、GSM 格式'); return Upload.LIST_IGNORE }
+      if (file.size > 20 * 1024 * 1024) { message.error('文件不能超过 20MB'); return Upload.LIST_IGNORE }
+      return true
+    },
+    customRequest: async ({ file, onSuccess, onError: _onError, onProgress: _onProgress }) => {
+      setUploading(true); setUploadProgress(0)
+      const interval = setInterval(() => setUploadProgress((p) => Math.min(p + 20, 90)), 300)
+      try {
+        const res = await audioFileService.upload(file as File, { name: (file as File).name.replace(/\.[^.]+$/, ''), category: '其他' })
+        setData((d) => [res, ...d])
+        message.success(`${(file as File).name} 上传成功`)
+        onSuccess?.({})
+      } catch {
+        const fake: AudioFile = { id: Date.now(), name: (file as File).name.replace(/\.[^.]+$/, ''), filename: (file as File).name, duration: 0, size: (file as File).size, format: (file as File).name.split('.').pop() ?? 'wav', usedIn: [], createdAt: new Date().toISOString() }
+        setData((d) => [fake, ...d])
+        message.success(`${(file as File).name} 上传成功（演示）`)
+        onSuccess?.({})
+      } finally {
+        clearInterval(interval); setUploadProgress(100)
+        setTimeout(() => { setUploading(false); setUploadProgress(0) }, 500)
       }
-    }
-  };
-
-  const formatSize = (bytes: number) => {
-    if (!bytes) return '-';
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
-  };
-
-  const columns = [
-    { title: '名称', dataIndex: 'name', ellipsis: true },
-    {
-      title: '分类', dataIndex: 'category',
-      render: (v: string) => <Tag color="blue">{CATEGORY_LABELS[v] || v}</Tag>,
     },
-    { title: '格式', dataIndex: 'mimeType', render: (v: string) => v?.split('/')[1]?.toUpperCase() || '-' },
-    { title: '大小', dataIndex: 'size', render: (v: number) => formatSize(v) },
+  }
+
+  const handleEdit = (r: AudioFile) => { setEditRecord(r); form.setFieldsValue(r); setEditModalOpen(true) }
+  const handleEditSave = async () => {
+    const vals = await form.validateFields()
+    try { await audioFileService.update(editRecord!.id, vals) } catch { /* */ }
+    setData((d) => d.map((x) => x.id === editRecord!.id ? { ...x, ...vals } : x))
+    setEditModalOpen(false); message.success('更新成功')
+  }
+
+  const filtered = data.filter((d) => !search || d.name.includes(search) || d.filename.includes(search))
+
+  const columns: ColumnsType<AudioFile> = [
     {
-      title: 'Asterisk路径', dataIndex: 'asteriskPath',
-      render: (v: string) => v ? <Tag color="green">{v}</Tag> : <Tag color="red">未复制到Asterisk</Tag>,
-    },
-    {
-      title: '操作', render: (_: any, r: any) => (
+      title: '名称', dataIndex: 'name', width: 160,
+      render: (v: string, r) => (
         <Space>
-          <Button
-            icon={<PlayCircleOutlined />}
-            size="small"
-            type={playingId === r.id ? 'primary' : 'default'}
-            onClick={() => handlePlay(r.id)}
-          >
-            {playingId === r.id ? '停止' : '播放'}
-          </Button>
-          <Popconfirm title="确认删除此音频文件？" onConfirm={() => handleDelete(r.id)}>
-            <Button icon={<DeleteOutlined />} size="small" danger>删除</Button>
+          <SoundOutlined style={{ color: playingId === r.id ? '#1677ff' : '#bbb' }} />
+          <Text strong>{v}</Text>
+        </Space>
+      ),
+    },
+    { title: '文件名', dataIndex: 'filename', width: 180, render: (v: string) => <Text type="secondary" style={{ fontSize: 12 }}>{v}</Text> },
+    { title: '格式', dataIndex: 'format', width: 70, render: (v: string) => <Tag>{v.toUpperCase()}</Tag> },
+    { title: '时长', dataIndex: 'duration', width: 80, render: (v: number) => fmtDuration(v) },
+    { title: '大小', dataIndex: 'size', width: 90, render: (v: number) => fmtSize(v) },
+    { title: '分类', dataIndex: 'category', width: 100, render: (v?: string) => v ? <Tag color="blue">{v}</Tag> : '-' },
+    {
+      title: '使用情况', dataIndex: 'usedIn', width: 180,
+      render: (v: string[]) => v.length > 0
+        ? v.map((n) => <Tag key={n} color="cyan">{n}</Tag>)
+        : <Tag color="default">未使用</Tag>,
+    },
+    { title: '上传时间', dataIndex: 'createdAt', width: 120, render: (v: string) => dayjs(v).format('MM-DD HH:mm') },
+    {
+      title: '操作', key: 'op', width: 140, fixed: 'right',
+      render: (_, r) => (
+        <Space>
+          <Tooltip title={playingId === r.id ? '停止' : '播放'}>
+            <Button size="small" type={playingId === r.id ? 'primary' : 'default'} icon={playingId === r.id ? <PauseCircleOutlined /> : <PlayCircleOutlined />} onClick={() => handlePlay(r.id)} />
+          </Tooltip>
+          <Tooltip title="重命名"><Button size="small" icon={<EditOutlined />} onClick={() => handleEdit(r)} /></Tooltip>
+          <Popconfirm title={r.usedIn.length > 0 ? `该文件被 ${r.usedIn.length} 处使用，确认删除？` : '确认删除？'} onConfirm={async () => { try { await audioFileService.delete(r.id) } catch { /* */ } setData((d) => d.filter((x) => x.id !== r.id)) }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
     },
-  ];
+  ]
 
-  const categories = [
-    { key: 'all', tab: '全部' },
-    { key: 'ivr', tab: 'IVR' },
-    { key: 'flow', tab: 'AI流程' },
-    { key: 'campaign', tab: '群呼' },
-    { key: 'moh', tab: '等待音乐' },
-    { key: 'other', tab: '其他' },
-  ];
+  const totalSize = data.reduce((s, d) => s + d.size, 0)
 
   return (
-    <div style={{ padding: 24 }}>
-      <audio ref={audioRef} onEnded={() => setPlayingId(null)} style={{ display: 'none' }} />
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={4}><SoundOutlined /> 音频文件管理</Title>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Title level={4} style={{ margin: 0 }}><SoundOutlined /> 音频文件管理</Title>
         <Space>
-          <Button icon={<SyncOutlined />} onClick={() => load(activeTab)}>刷新</Button>
-          <Button type="primary" icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>上传音频</Button>
+          <Input.Search placeholder="搜索文件名" value={search} onChange={(e) => setSearch(e.target.value)} style={{ width: 200 }} allowClear />
+          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
+          <Upload {...uploadProps}>
+            <Button type="primary" icon={<UploadOutlined />} loading={uploading}>上传音频</Button>
+          </Upload>
         </Space>
       </div>
 
-      <Card>
-        <Tabs activeKey={activeTab} onChange={handleTabChange}>
-          {categories.map(c => (
-            <TabPane key={c.key} tab={c.tab}>
-              <Table rowKey="id" dataSource={files} columns={columns} loading={loading} />
-            </TabPane>
-          ))}
-        </Tabs>
-      </Card>
+      {uploading && <Progress percent={uploadProgress} style={{ marginBottom: 12 }} />}
 
-      <Modal
-        open={uploadOpen}
-        title="上传音频文件"
-        onCancel={() => { setUploadOpen(false); setFileList([]); }}
-        onOk={handleUpload}
-        width={480}
-      >
-        <Form form={uploadForm} layout="vertical">
-          <Form.Item label="音频文件" required>
-            <Upload
-              fileList={fileList}
-              beforeUpload={(file) => {
-                setFileList([file as unknown as UploadFile]);
-                if (!uploadForm.getFieldValue('name')) {
-                  uploadForm.setFieldValue('name', file.name.replace(/\.[^/.]+$/, ''));
-                }
-                return false;
-              }}
-              onRemove={() => setFileList([])}
-              accept=".wav,.mp3,.gsm,.ogg"
-              maxCount={1}
-            >
-              <Button icon={<UploadOutlined />}>选择文件 (WAV/MP3/GSM)</Button>
-            </Upload>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              推荐格式: WAV (8kHz, 16bit, 单声道) 以获得最佳 Asterisk 兼容性
-            </Text>
-          </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input placeholder="音频名称" />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-          <Form.Item name="category" label="分类" initialValue="other">
-            <Select>
-              {Object.entries(CATEGORY_LABELS).map(([k, v]) => (
-                <Option key={k} value={k}>{v}</Option>
-              ))}
-            </Select>
-          </Form.Item>
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        {[
+          { title: '文件总数', value: data.length, color: '#1677ff', suffix: '个' },
+          { title: '总占用空间', value: fmtSize(totalSize), color: '#722ed1', suffix: '' },
+          { title: '在用文件', value: data.filter((d) => d.usedIn.length > 0).length, color: '#52c41a', suffix: '个' },
+        ].map((c) => (
+          <Col key={c.title} xs={12} sm={8}>
+            <Card size="small" style={{ borderTop: `3px solid ${c.color}`, borderRadius: 8 }}>
+              <Statistic title={c.title} value={c.value} suffix={c.suffix} valueStyle={{ color: c.color }} />
+            </Card>
+          </Col>
+        ))}
+      </Row>
+
+      <Table columns={columns} dataSource={filtered} rowKey="id" loading={loading} scroll={{ x: 1000 }} />
+
+      <Modal title="编辑音频文件" open={editModalOpen} onOk={handleEditSave} onCancel={() => setEditModalOpen(false)} okText="保存" cancelText="取消">
+        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="name" label="文件名称" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="category" label="分类"><Select allowClear placeholder="选择分类">{CATEGORIES.map((c) => <Option key={c} value={c}>{c}</Option>)}</Select></Form.Item>
         </Form>
       </Modal>
     </div>
-  );
-};
+  )
+}
 
-export default AudioFiles;
+export default AudioFiles

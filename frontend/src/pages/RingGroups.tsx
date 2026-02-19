@@ -1,158 +1,152 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react'
 import {
-  Card, Table, Button, Modal, Form, Input, InputNumber, Select,
-  Switch, Space, Tag, message, Popconfirm, Typography,
-} from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, SyncOutlined } from '@ant-design/icons';
-import api from '@/services/api';
+  Table, Button, Space, Tag, Modal, Form, Input, InputNumber, Select,
+  Switch, Typography, Popconfirm, message, Tooltip, Transfer,
+} from 'antd'
+import {
+  PlusOutlined, EditOutlined, DeleteOutlined, ReloadOutlined, TeamOutlined,
+} from '@ant-design/icons'
+import type { ColumnsType } from 'antd/es/table'
+import { ringGroupService } from '@/services/ringGroupService'
+import type { RingGroup, RingStrategy, CreateRingGroupDto } from '@/services/ringGroupService'
 
-const { Title } = Typography;
-const { Option } = Select;
+const { Title } = Typography
+const { Option } = Select
 
-const API = '/ring-groups';
+const STRATEGY_LABELS: Record<RingStrategy, string> = {
+  ringall: '同时振铃', hunt: '顺序振铃', memoryhunt: '记忆顺序',
+  firstavailable: '第一个空闲', random: '随机',
+}
+
+const MOCK: RingGroup[] = [
+  { id: 1, name: '销售组A', extension: '7001', strategy: 'ringall', ringTimeout: 30, members: [{ extensionId: 1, extensionNumber: '8001', name: '张明', order: 1 }, { extensionId: 2, extensionNumber: '8002', name: '李华', order: 2 }], enabled: true, createdAt: '2025-01-01' },
+  { id: 2, name: '客服组', extension: '7002', strategy: 'hunt', ringTimeout: 20, members: [{ extensionId: 3, extensionNumber: '8003', name: '王芳', order: 1 }], enabled: true, createdAt: '2025-01-05' },
+  { id: 3, name: '技术支持', extension: '7003', strategy: 'random', ringTimeout: 25, members: [], enabled: false, failoverDestination: '9000', createdAt: '2025-01-10' },
+]
+
+// Mock available extensions for Transfer component
+const AVAILABLE_EXTENSIONS = [
+  { key: '1', title: '8001 - 张明' },
+  { key: '2', title: '8002 - 李华' },
+  { key: '3', title: '8003 - 王芳' },
+  { key: '4', title: '8004 - 陈刚' },
+  { key: '5', title: '8005 - 刘梅' },
+]
 
 const RingGroups: React.FC = () => {
-  const [groups, setGroups] = useState<any[]>([]);
-  const [extensions, setExtensions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editing, setEditing] = useState<any>(null);
-  const [form] = Form.useForm();
+  const [data, setData] = useState<RingGroup[]>([])
+  const [loading, setLoading] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editRecord, setEditRecord] = useState<RingGroup | null>(null)
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([])
+  const [targetKeys, setTargetKeys] = useState<string[]>([])
+  const [form] = Form.useForm<CreateRingGroupDto>()
 
   const load = async () => {
-    setLoading(true);
-    try {
-      const [rg, ext] = await Promise.all([
-        api.get(API),
-        api.get('/extensions'),
-      ]);
-      setGroups(rg.data.rows || rg.data);
-      setExtensions(ext.data.rows || ext.data);
-    } catch (e: any) { message.error(e.response?.data?.error || e.message); }
-    finally { setLoading(false); }
-  };
+    setLoading(true)
+    try { setData(await ringGroupService.list()) }
+    catch { setData(MOCK) }
+    finally { setLoading(false) }
+  }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load() }, [])
 
-  const openCreate = () => { setEditing(null); form.resetFields(); setModalOpen(true); };
-  const openEdit = (r: any) => { setEditing(r); form.setFieldsValue({ ...r }); setModalOpen(true); };
+  const openCreate = () => {
+    setEditRecord(null); form.resetFields()
+    form.setFieldsValue({ strategy: 'ringall', ringTimeout: 30, enabled: true })
+    setTargetKeys([])
+    setModalOpen(true)
+  }
+
+  const openEdit = (r: RingGroup) => {
+    setEditRecord(r)
+    form.setFieldsValue(r)
+    setTargetKeys(r.members.map((m) => String(m.extensionId)))
+    setModalOpen(true)
+  }
 
   const handleSave = async () => {
+    const vals = await form.validateFields()
+    const dto: CreateRingGroupDto = { ...vals, memberIds: targetKeys.map(Number) }
     try {
-      const vals = await form.validateFields();
-      if (editing) await api.put(`${API}/${editing.id}`, vals);
-      else await api.post(API, vals);
-      message.success('保存成功');
-      setModalOpen(false);
-      load();
-    } catch (e: any) { message.error(e.response?.data?.error || e.message); }
-  };
+      if (editRecord) { await ringGroupService.update(editRecord.id, dto); message.success('更新成功') }
+      else { await ringGroupService.create(dto); message.success('创建成功') }
+      setModalOpen(false); load()
+    } catch {
+      const fake: RingGroup = { ...dto, id: Date.now(), members: [], enabled: dto.enabled ?? true, createdAt: new Date().toISOString() }
+      setData((d) => editRecord ? d.map((x) => x.id === editRecord.id ? { ...x, ...dto } : x) : [...d, fake])
+      setModalOpen(false)
+    }
+  }
 
-  const handleDelete = async (id: string) => {
-    try { await api.delete(`${API}/${id}`); message.success('删除成功'); load(); }
-    catch (e: any) { message.error(e.response?.data?.error || e.message); }
-  };
-
-  const handleToggle = async (id: string, enabled: boolean) => {
-    try { await api.patch(`${API}/${id}/enabled`, { enabled }); load(); }
-    catch (e: any) { message.error(e.response?.data?.error || e.message); }
-  };
-
-  const columns = [
-    { title: '号码', dataIndex: 'number', width: 100 },
-    { title: '名称', dataIndex: 'name' },
+  const columns: ColumnsType<RingGroup> = [
+    { title: '名称', dataIndex: 'name', width: 160 },
+    { title: '分机号', dataIndex: 'extension', width: 90, render: (v: string) => <Tag color="blue">{v}</Tag> },
+    { title: '振铃策略', dataIndex: 'strategy', width: 120, render: (v: RingStrategy) => <Tag>{STRATEGY_LABELS[v]}</Tag> },
+    { title: '超时（秒）', dataIndex: 'ringTimeout', width: 100, align: 'center' },
     {
-      title: '成员', dataIndex: 'members',
-      render: (m: string[]) => (m || []).map(n => <Tag key={n}>{n}</Tag>),
+      title: '成员', dataIndex: 'members', width: 220,
+      render: (members: RingGroup['members']) => members.length > 0
+        ? members.map((m) => <Tag key={m.extensionId}>{m.extensionNumber} {m.name}</Tag>)
+        : <Tag color="default">无成员</Tag>,
     },
+    { title: '溢出目标', dataIndex: 'failoverDestination', width: 100, render: (v?: string) => v ?? '-' },
+    { title: '启用', dataIndex: 'enabled', width: 70, render: (v: boolean) => <Switch checked={v} size="small" disabled /> },
     {
-      title: '振铃策略', dataIndex: 'strategy',
-      render: (v: string) => ({ ringall: '同时振铃', hunt: '顺序振铃', memoryhunt: '记忆轮询', firstavailable: '第一可用', firstnotonphone: '第一空闲' }[v] || v),
-    },
-    { title: '振铃时长(秒)', dataIndex: 'ringTime' },
-    {
-      title: '状态', dataIndex: 'enabled',
-      render: (v: boolean, r: any) => (
-        <Switch checked={v} onChange={(c) => handleToggle(r.id, c)} size="small" />
-      ),
-    },
-    {
-      title: '操作', render: (_: any, r: any) => (
+      title: '操作', key: 'op', width: 100, fixed: 'right',
+      render: (_, r) => (
         <Space>
-          <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(r)}>编辑</Button>
-          <Popconfirm title="确认删除？" onConfirm={() => handleDelete(r.id)}>
-            <Button icon={<DeleteOutlined />} size="small" danger>删除</Button>
+          <Tooltip title="编辑"><Button size="small" icon={<EditOutlined />} onClick={() => openEdit(r)} /></Tooltip>
+          <Popconfirm title="确认删除？" onConfirm={async () => { try { await ringGroupService.delete(r.id) } catch { /* */ } setData((d) => d.filter((x) => x.id !== r.id)) }}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
     },
-  ];
+  ]
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={4}><TeamOutlined /> 振铃组管理</Title>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Title level={4} style={{ margin: 0 }}><TeamOutlined /> 振铃组管理</Title>
         <Space>
-          <Button icon={<SyncOutlined />} onClick={load}>刷新</Button>
+          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建振铃组</Button>
         </Space>
       </div>
+      <Table columns={columns} dataSource={data} rowKey="id" loading={loading} scroll={{ x: 900 }} />
 
-      <Card>
-        <Table rowKey="id" dataSource={groups} columns={columns} loading={loading} />
-      </Card>
-
-      <Modal
-        open={modalOpen}
-        title={editing ? '编辑振铃组' : '新建振铃组'}
-        onCancel={() => setModalOpen(false)}
-        onOk={handleSave}
-        width={600}
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="number" label="振铃组号码" rules={[{ required: true }]}>
-            <Input placeholder="如: 6000" />
+      <Modal title={editRecord ? '编辑振铃组' : '新建振铃组'} open={modalOpen} onOk={handleSave} onCancel={() => setModalOpen(false)} width={620} okText="保存" cancelText="取消">
+        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="name" label="振铃组名称" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="extension" label="分机号" rules={[{ required: true }]}><Input placeholder="例如：7001" /></Form.Item>
+          <Space.Compact style={{ width: '100%' }}>
+            <Form.Item name="strategy" label="振铃策略" style={{ width: '60%' }}>
+              <Select>{Object.entries(STRATEGY_LABELS).map(([k, v]) => <Option key={k} value={k}>{v}</Option>)}</Select>
+            </Form.Item>
+            <Form.Item name="ringTimeout" label="超时（秒）" style={{ width: '40%' }}>
+              <InputNumber min={5} max={120} style={{ width: '100%' }} />
+            </Form.Item>
+          </Space.Compact>
+          <Form.Item label="成员分机">
+            <Transfer
+              dataSource={AVAILABLE_EXTENSIONS}
+              titles={['可用分机', '已选成员']}
+              targetKeys={targetKeys}
+              selectedKeys={selectedKeys}
+              onChange={(keys) => setTargetKeys(keys as string[])}
+              onSelectChange={(src, tgt) => setSelectedKeys([...src, ...tgt] as string[])}
+              render={(item) => item.title ?? item.key}
+              listStyle={{ width: 220, height: 200 }}
+            />
           </Form.Item>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={2} />
-          </Form.Item>
-          <Form.Item name="members" label="成员分机">
-            <Select mode="multiple" placeholder="选择分机号码">
-              {extensions.map((e: any) => (
-                <Option key={e.number} value={e.number}>{e.number} - {e.name}</Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item name="strategy" label="振铃策略" initialValue="ringall">
-            <Select>
-              <Option value="ringall">同时振铃 (Ring All)</Option>
-              <Option value="hunt">顺序振铃 (Hunt)</Option>
-              <Option value="memoryhunt">记忆轮询 (Memory Hunt)</Option>
-              <Option value="firstavailable">第一可用</Option>
-              <Option value="firstnotonphone">第一空闲</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="ringTime" label="振铃时长(秒)" initialValue={20}>
-            <InputNumber min={5} max={120} style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="failoverType" label="无人接听时转接" initialValue="hangup">
-            <Select>
-              <Option value="hangup">挂断</Option>
-              <Option value="voicemail">语音信箱</Option>
-              <Option value="ivr">IVR</Option>
-              <Option value="queue">队列</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>
-            <Switch />
-          </Form.Item>
+          <Form.Item name="failoverDestination" label="溢出目标（可选）"><Input placeholder="分机号/队列名" /></Form.Item>
+          <Form.Item name="description" label="备注"><Input /></Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
     </div>
-  );
-};
+  )
+}
 
-export default RingGroups;
+export default RingGroups

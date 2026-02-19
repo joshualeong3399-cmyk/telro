@@ -1,91 +1,114 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ConfigProvider } from 'antd';
-import zhCN from 'antd/locale/zh_CN';
-import dayjs from 'dayjs';
-import 'dayjs/locale/zh-cn';
-import ProtectedRoute from './components/ProtectedRoute';
-import Layout from './layouts/Layout';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import ExtensionManagement from './pages/ExtensionManagement';
-import BillingManagement from './pages/BillingManagement';
-import RecordingManagement from './pages/RecordingManagement';
-import QueueManagement from './pages/QueueManagement';
-import CallHistory from './pages/CallHistory';
-import AgentManagement from './pages/AgentManagement';
-import CustomerManagement from './pages/CustomerManagement';
-// 新增页面
-import SipTrunkManagement from './pages/SipTrunkManagement';
-import InboundRoutes from './pages/InboundRoutes';
-import OutboundRoutes from './pages/OutboundRoutes';
-import IvrManagement from './pages/IvrManagement';
-import TimeConditions from './pages/TimeConditions';
-import DncManagement from './pages/DncManagement';
-import Wallboard from './pages/Wallboard';
-import Reports from './pages/Reports';
-import AsteriskManagement from './pages/AsteriskManagement';
-// 新功能页面
-import RingGroups from './pages/RingGroups';
-import ConferenceRooms from './pages/ConferenceRooms';
-import Voicemail from './pages/Voicemail';
-import CampaignManagement from './pages/CampaignManagement';
-import AiFlowBuilder from './pages/AiFlowBuilder';
-import AudioFiles from './pages/AudioFiles';
-import SMS from './pages/SMS';
-import UserManagement from './pages/UserManagement';
+import { lazy, Suspense } from 'react'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { ConfigProvider, Spin } from 'antd'
+import zhCN from 'antd/locale/zh_CN'
+import dayjs from 'dayjs'
+import 'dayjs/locale/zh-cn'
 
-dayjs.locale('zh-cn');
+import MainLayout from '@/layouts/MainLayout'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import Login from '@/pages/Login'
 
-const App: React.FC = () => {
+// ── 懒加载所有页面（代码分割） ────────────────────────────────────────────────
+const Dashboard          = lazy(() => import('@/pages/Dashboard'))
+const Wallboard          = lazy(() => import('@/pages/Wallboard'))
+const AgentManagement    = lazy(() => import('@/pages/AgentManagement'))
+const CustomerManagement = lazy(() => import('@/pages/CustomerManagement'))
+const ExtensionManagement= lazy(() => import('@/pages/ExtensionManagement'))
+const CallHistory        = lazy(() => import('@/pages/CallHistory'))
+const RecordingManagement= lazy(() => import('@/pages/RecordingManagement'))
+const BillingManagement  = lazy(() => import('@/pages/BillingManagement'))
+const AiFlowBuilder      = lazy(() => import('@/pages/AiFlowBuilder'))
+const CampaignManagement = lazy(() => import('@/pages/CampaignManagement'))
+const QueueManagement    = lazy(() => import('@/pages/QueueManagement'))
+const DncManagement      = lazy(() => import('@/pages/DncManagement'))
+const SipTrunkManagement = lazy(() => import('@/pages/SipTrunkManagement'))
+const InboundRoutes      = lazy(() => import('@/pages/InboundRoutes'))
+const OutboundRoutes     = lazy(() => import('@/pages/OutboundRoutes'))
+const IvrManagement      = lazy(() => import('@/pages/IvrManagement'))
+const TimeConditions     = lazy(() => import('@/pages/TimeConditions'))
+const RingGroups         = lazy(() => import('@/pages/RingGroups'))
+const ConferenceRooms    = lazy(() => import('@/pages/ConferenceRooms'))
+const VoicemailPage      = lazy(() => import('@/pages/Voicemail'))
+const AsteriskManagement = lazy(() => import('@/pages/AsteriskManagement'))
+const AudioFiles         = lazy(() => import('@/pages/AudioFiles'))
+const Reports            = lazy(() => import('@/pages/Reports'))
+const SmsCenter          = lazy(() => import('@/pages/SmsCenter'))
+const UserManagement     = lazy(() => import('@/pages/UserManagement'))
+const Profile            = lazy(() => import('@/pages/Profile'))
+
+dayjs.locale('zh-cn')
+
+function App() {
   return (
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider
+      locale={zhCN}
+      theme={{
+        token: {
+          colorPrimary: '#1677ff',
+          borderRadius: 6,
+        },
+      }}
+    >
       <Router>
         <Routes>
+          {/* 公开路由 */}
           <Route path="/login" element={<Login />} />
+
+          {/* 受保护路由：所有已登录页面共享 MainLayout */}
           <Route
             path="/*"
             element={
               <ProtectedRoute>
-                <Layout>
+                <MainLayout>
+                  <Suspense fallback={<div style={{ display:'flex', justifyContent:'center', paddingTop:120 }}><Spin size="large" /></div>}>
                   <Routes>
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    <Route path="/extensions" element={<ExtensionManagement />} />
-                    <Route path="/agents" element={<AgentManagement />} />
-                    <Route path="/customers" element={<CustomerManagement />} />
-                    <Route path="/billing" element={<BillingManagement />} />
-                    <Route path="/recordings" element={<RecordingManagement />} />
-                    <Route path="/queue" element={<QueueManagement />} />
-                    <Route path="/calls" element={<CallHistory />} />
-                    {/* 新增路由 */}
-                    <Route path="/sip-trunks" element={<SipTrunkManagement />} />
-                    <Route path="/inbound-routes" element={<InboundRoutes />} />
+                    {/* ── 默认重定向 ── */}
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
+
+                    {/* ── 公共页面（所有角色） ── */}
+                    <Route path="/dashboard"     element={<Dashboard />} />
+                    <Route path="/wallboard"     element={<Wallboard />} />
+                    <Route path="/extensions"    element={<ExtensionManagement />} />
+                    <Route path="/calls"         element={<CallHistory />} />
+                    <Route path="/recordings"    element={<RecordingManagement />} />
+                    <Route path="/voicemail"     element={<VoicemailPage />} />
+                    <Route path="/sms"           element={<SmsCenter />} />
+
+                    {/* ── 拨出业务（Merchant 及以上） ── */}
+                    <Route path="/agents"        element={<AgentManagement />} />
+                    <Route path="/customers"     element={<CustomerManagement />} />
+                    <Route path="/campaigns"     element={<CampaignManagement />} />
+                    <Route path="/queues"        element={<QueueManagement />} />
+                    <Route path="/dnc"           element={<DncManagement />} />
+                    <Route path="/ring-groups"   element={<RingGroups />} />
+                    <Route path="/conference"    element={<ConferenceRooms />} />
+                    <Route path="/billing"       element={<BillingManagement />} />
+                    <Route path="/ai-flows"      element={<AiFlowBuilder />} />
+                    <Route path="/audio-files"   element={<AudioFiles />} />
+                    <Route path="/reports"       element={<Reports />} />
+
+                    {/* ── 路由设置（Operator 及以上） ── */}
+                    <Route path="/sip-trunks"      element={<SipTrunkManagement />} />
+                    <Route path="/inbound-routes"  element={<InboundRoutes />} />
                     <Route path="/outbound-routes" element={<OutboundRoutes />} />
-                    <Route path="/ivr" element={<IvrManagement />} />
+                    <Route path="/ivr"             element={<IvrManagement />} />
                     <Route path="/time-conditions" element={<TimeConditions />} />
-                    <Route path="/dnc" element={<DncManagement />} />
-                    <Route path="/wallboard" element={<Wallboard />} />
-                    <Route path="/reports" element={<Reports />} />
-                    <Route path="/asterisk" element={<AsteriskManagement />} />
-                    {/* 新功能路由 */}
-                    <Route path="/ring-groups" element={<RingGroups />} />
-                    <Route path="/conference" element={<ConferenceRooms />} />
-                    <Route path="/voicemail" element={<Voicemail />} />
-                    <Route path="/campaigns" element={<CampaignManagement />} />
-                    <Route path="/ai-flows" element={<AiFlowBuilder />} />
-                    <Route path="/audio-files" element={<AudioFiles />} />
-                    <Route path="/sms" element={<SMS />} />
-                    <Route path="/users" element={<UserManagement />} />
-                    <Route path="/" element={<Navigate to="/dashboard" />} />
+                    <Route path="/asterisk"        element={<AsteriskManagement />} />
+
+                    {/* ── 系统管理（Admin） ── */}
+                    <Route path="/users"   element={<UserManagement />} />
+                    <Route path="/profile" element={<Profile />} />
                   </Routes>
-                </Layout>
+                  </Suspense>
+                </MainLayout>
               </ProtectedRoute>
             }
           />
         </Routes>
       </Router>
     </ConfigProvider>
-  );
-};
+  )
+}
 
-export default App;
+export default App

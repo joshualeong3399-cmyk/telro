@@ -1,32 +1,41 @@
-import { create } from 'zustand';
-import { CallRecord, ActiveCall } from '@/services/call';
+import { create } from 'zustand'
+import type { CallUpdatePayload } from '@/services/socket'
 
-interface CallStore {
-  activeCalls: ActiveCall[];
-  recentCalls: CallRecord[];
-  selectedCall: CallRecord | null;
-  
-  setActiveCalls: (calls: ActiveCall[]) => void;
-  addActiveCall: (call: ActiveCall) => void;
-  removeActiveCall: (callId: string) => void;
-  
-  setRecentCalls: (calls: CallRecord[]) => void;
-  selectCall: (call: CallRecord | null) => void;
+interface CallState extends CallUpdatePayload {
+  recentCalls: RecentCall[]
+  setCallStats: (stats: CallUpdatePayload) => void
+  addRecentCall: (call: RecentCall) => void
+  reset: () => void
 }
 
-export const useCallStore = create<CallStore>((set) => ({
-  activeCalls: [],
+export interface RecentCall {
+  callId: string
+  direction: 'inbound' | 'outbound'
+  callerIdNumber: string
+  callerIdName?: string
+  destinationNumber: string
+  duration: number
+  disposition: 'ANSWERED' | 'NO ANSWER' | 'BUSY' | 'FAILED'
+  startTime: string
+}
+
+const initialStats: CallUpdatePayload = {
+  totalCalls: 0,
+  answeredCalls: 0,
+  queuedCalls: 0,
+  onlineAgents: 0,
+}
+
+export const useCallStore = create<CallState>((set) => ({
+  ...initialStats,
   recentCalls: [],
-  selectedCall: null,
-  
-  setActiveCalls: (calls) => set({ activeCalls: calls }),
-  addActiveCall: (call) => set((state) => ({
-    activeCalls: [call, ...state.activeCalls],
-  })),
-  removeActiveCall: (callId) => set((state) => ({
-    activeCalls: state.activeCalls.filter((c) => c.id !== callId),
-  })),
-  
-  setRecentCalls: (calls) => set({ recentCalls: calls }),
-  selectCall: (call) => set({ selectedCall: call }),
-}));
+
+  setCallStats: (stats) => set({ ...stats }),
+
+  addRecentCall: (call) =>
+    set((s) => ({
+      recentCalls: [call, ...s.recentCalls].slice(0, 100), // keep last 100
+    })),
+
+  reset: () => set({ ...initialStats, recentCalls: [] }),
+}))

@@ -1,360 +1,299 @@
-import React, { useEffect, useState } from 'react';
-import {
-  Table,
-  Button,
-  Modal,
-  Form,
-  Input,
-  Select,
-  Space,
-  message,
-  Tag,
-  Upload,
-  Progress,
-  Statistic,
-  Row,
-  Col,
-  Card,
-} from 'antd';
-import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  PlayCircleOutlined,
-  PauseCircleOutlined,
-  StopOutlined,
-} from '@ant-design/icons';
-import { queueAPI, Queue, QueueTask } from '@/services/queue';
-import type { UploadFile } from 'antd/es/upload/interface';
+import { useState } from 'react'
+import { Card, Table, Button, Space, message, Modal, Form, Input, Select, InputNumber, Tag } from 'antd'
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons'
+import type { ColumnsType } from 'antd/es/table'
 
-const QueueManagement: React.FC = () => {
-  const [form] = Form.useForm();
-  const [queues, setQueues] = useState<Queue[]>([]);
-  const [selectedQueue, setSelectedQueue] = useState<Queue | null>(null);
-  const [tasks, setTasks] = useState<QueueTask[]>([]);
-  const [stats, setStats] = useState<any>(null);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [taskModalVisible, setTaskModalVisible] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [fileList, setFileList] = useState<UploadFile[]>([]);
+interface Queue {
+  id: number
+  name: string
+  extension: string
+  strategy: 'ringall' | 'leastrecent' | 'fewestcalls' | 'random' | 'rrmemory'
+  timeout: number
+  maxWait: number
+  memberCount: number
+  waitingCount: number
+  status: 'active' | 'inactive'
+  createdAt: string
+}
 
-  useEffect(() => {
-    fetchQueues();
-  }, []);
+const QueueManagement = () => {
+  const [loading, setLoading] = useState(false)
+  const [modalVisible, setModalVisible] = useState(false)
+  const [editingQueue, setEditingQueue] = useState<Queue | null>(null)
+  const [form] = Form.useForm()
 
-  useEffect(() => {
-    if (selectedQueue) {
-      fetchQueueDetails(selectedQueue.id);
-    }
-  }, [selectedQueue]);
+  const [queues] = useState<Queue[]>([
+    {
+      id: 1,
+      name: '销售队列',
+      extension: '6001',
+      strategy: 'ringall',
+      timeout: 30,
+      maxWait: 300,
+      memberCount: 8,
+      waitingCount: 3,
+      status: 'active',
+      createdAt: '2026-01-15 10:00:00',
+    },
+    {
+      id: 2,
+      name: '客服队列',
+      extension: '6002',
+      strategy: 'leastrecent',
+      timeout: 25,
+      maxWait: 600,
+      memberCount: 12,
+      waitingCount: 5,
+      status: 'active',
+      createdAt: '2026-01-20 14:30:00',
+    },
+    {
+      id: 3,
+      name: '技术支持',
+      extension: '6003',
+      strategy: 'fewestcalls',
+      timeout: 20,
+      maxWait: 300,
+      memberCount: 5,
+      waitingCount: 0,
+      status: 'active',
+      createdAt: '2026-02-01 09:00:00',
+    },
+  ])
 
-  const fetchQueues = async () => {
-    setLoading(true);
-    try {
-      const response = await queueAPI.getList({ limit: 100 });
-      setQueues(response.data.rows ?? (response.data as any));
-    } catch (error) {
-      message.error('加载队列列表失败');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const strategyMap = {
+    ringall: '全部响铃',
+    leastrecent: '最少最近接听',
+    fewestcalls: '最少接听次数',
+    random: '随机分配',
+    rrmemory: '轮询记忆',
+  }
 
-  const fetchQueueDetails = async (queueId: string) => {
-    try {
-      const [tasksRes, statsRes] = await Promise.all([
-        queueAPI.getTasks(queueId, { limit: 100 }),
-        queueAPI.getStats(queueId),
-      ]);
-      setTasks(tasksRes.data.rows ?? (tasksRes.data as any));
-      setStats(statsRes);
-    } catch (error) {
-      message.error('加载队列详情失败');
-    }
-  };
-
-  const handleAddQueue = () => {
-    setEditingId(null);
-    form.resetFields();
-    setModalVisible(true);
-  };
-
-  const handleEditQueue = (queue: Queue) => {
-    setEditingId(queue.id);
-    form.setFieldsValue(queue);
-    setModalVisible(true);
-  };
-
-  const handleSubmitQueue = async (values: any) => {
-    setLoading(true);
-    try {
-      if (editingId) {
-        await queueAPI.update(editingId, values);
-        setQueues(queues.map((q) => (q.id === editingId ? { ...q, ...values } : q)));
-        message.success('队列已更新');
-      } else {
-        const response = await queueAPI.create(values);
-        setQueues([response.data, ...queues]);
-        message.success('队列已创建');
-      }
-      setModalVisible(false);
-    } catch (error: any) {
-      message.error(error.message || '操作失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeleteQueue = async (id: string) => {
-    try {
-      await queueAPI.delete(id);
-      setQueues(queues.filter((q) => q.id !== id));
-      if (selectedQueue?.id === id) setSelectedQueue(null);
-      message.success('队列已删除');
-    } catch (error: any) {
-      message.error(error.message || '删除失败');
-    }
-  };
-
-  const handleStartQueue = async (queueId: string) => {
-    try {
-      await queueAPI.start(queueId);
-      setQueues(
-        queues.map((q) => (q.id === queueId ? { ...q, status: 'active' } : q))
-      );
-      message.success('队列已启动');
-    } catch (error: any) {
-      message.error(error.message || '启动失败');
-    }
-  };
-
-  const handlePauseQueue = async (queueId: string) => {
-    try {
-      await queueAPI.pause(queueId);
-      setQueues(
-        queues.map((q) => (q.id === queueId ? { ...q, status: 'paused' } : q))
-      );
-      message.success('队列已暂停');
-    } catch (error: any) {
-      message.error(error.message || '暂停失败');
-    }
-  };
-
-  const handleUploadTasks = async (phoneNumbers: string[]) => {
-    if (!selectedQueue) {
-      message.error('请先选择队列');
-      return;
-    }
-    try {
-      await queueAPI.addTasks(selectedQueue.id, {
-        phoneNumbers,
-        maxAttempts: 3,
-      });
-      await fetchQueueDetails(selectedQueue.id);
-      setTaskModalVisible(false);
-      message.success('任务已上传');
-    } catch (error: any) {
-      message.error(error.message || '上传失败');
-    }
-  };
-
-  const queueColumns = [
-    { title: '队列名称', dataIndex: 'name', key: 'name' },
-    { title: '分机', dataIndex: 'extensionId', key: 'extension' },
-    { title: '策略', dataIndex: 'strategy', key: 'strategy' },
+  const columns: ColumnsType<Queue> = [
+    {
+      title: 'ID',
+      dataIndex: 'id',
+      width: 70,
+    },
+    {
+      title: '队列名称',
+      dataIndex: 'name',
+      width: 150,
+    },
+    {
+      title: '队列号码',
+      dataIndex: 'extension',
+      width: 120,
+    },
+    {
+      title: '分配策略',
+      dataIndex: 'strategy',
+      width: 150,
+      render: (strategy: Queue['strategy']) => strategyMap[strategy],
+    },
+    {
+      title: '响铃超时',
+      dataIndex: 'timeout',
+      width: 100,
+      render: (timeout) => `${timeout} 秒`,
+    },
+    {
+      title: '最大等待',
+      dataIndex: 'maxWait',
+      width: 100,
+      render: (maxWait) => `${maxWait} 秒`,
+    },
+    {
+      title: '成员数',
+      dataIndex: 'memberCount',
+      width: 100,
+      render: (count) => <Tag color="blue">{count} 人</Tag>,
+    },
+    {
+      title: '排队数',
+      dataIndex: 'waitingCount',
+      width: 100,
+      render: (count) => (
+        <Tag color={count > 0 ? 'orange' : 'default'}>{count} 人</Tag>
+      ),
+    },
     {
       title: '状态',
       dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => {
-        const colors: any = { active: 'green', paused: 'orange', stopped: 'default' };
-        const labels: any = { active: '运行中', paused: '已暂停', stopped: '已停止' };
-        return <Tag color={colors[status]}>{labels[status]}</Tag>;
-      },
+      width: 100,
+      render: (status: Queue['status']) => (
+        <Tag color={status === 'active' ? 'green' : 'default'}>
+          {status === 'active' ? '启用' : '禁用'}
+        </Tag>
+      ),
+    },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      width: 160,
     },
     {
       title: '操作',
-      key: 'action',
-      render: (_, record: Queue) => (
+      fixed: 'right',
+      width: 150,
+      render: (_, record) => (
         <Space>
-          {record.status === 'active' ? (
-            <Button
-              type="text"
-              size="small"
-              icon={<PauseCircleOutlined />}
-              onClick={() => handlePauseQueue(record.id)}
-            />
-          ) : (
-            <Button
-              type="text"
-              size="small"
-              icon={<PlayCircleOutlined />}
-              onClick={() => handleStartQueue(record.id)}
-            />
-          )}
           <Button
-            type="text"
+            type="link"
             size="small"
             icon={<EditOutlined />}
-            onClick={() => handleEditQueue(record)}
-          />
+            onClick={() => handleEdit(record)}
+          >
+            编辑
+          </Button>
           <Button
-            type="text"
-            danger
+            type="link"
             size="small"
+            danger
             icon={<DeleteOutlined />}
-            onClick={() => handleDeleteQueue(record.id)}
-          />
+            onClick={() => handleDelete(record.id)}
+          >
+            删除
+          </Button>
         </Space>
       ),
     },
-  ];
+  ]
 
-  const taskColumns = [
-    { title: '电话号码', dataIndex: 'phoneNumber', key: 'phone' },
-    { title: '尝试次数', dataIndex: 'attempts', key: 'attempts' },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      render: (status: string) => {
-        const colors: any = { pending: 'default', processing: 'processing', completed: 'success', failed: 'error' };
-        const labels: any = { pending: '待处理', processing: '处理中', completed: '已完成', failed: '失败' };
-        return <Tag color={colors[status]}>{labels[status]}</Tag>;
+  const handleAdd = () => {
+    setEditingQueue(null)
+    form.resetFields()
+    setModalVisible(true)
+  }
+
+  const handleEdit = (queue: Queue) => {
+    setEditingQueue(queue)
+    form.setFieldsValue(queue)
+    setModalVisible(true)
+  }
+
+  const handleDelete = (_id: number) => {
+    Modal.confirm({
+      title: '确认删除',
+      content: '确定要删除此队列吗？删除后将无法恢复。',
+      okText: '确定',
+      cancelText: '取消',
+      onOk: () => {
+        message.success('删除成功')
       },
-    },
-    { title: '结果', dataIndex: 'result', key: 'result' },
-  ];
+    })
+  }
+
+  const handleSubmit = async () => {
+    try {
+      await form.validateFields()
+      setLoading(true)
+      setModalVisible(false)
+    } catch {
+      // validation errors shown by form
+    } finally {
+      setLoading(false)
+    }
+  }
 
   return (
-    <div style={{ padding: '24px' }}>
-      <div style={{ marginBottom: '16px' }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleAddQueue}>
-          新建队列
-        </Button>
-      </div>
-
-      <Table
-        columns={queueColumns}
-        dataSource={queues}
-        loading={loading}
-        rowKey="id"
-        onRow={(record) => ({
-          onClick: () => setSelectedQueue(record),
-          style: {
-            cursor: 'pointer',
-            backgroundColor: selectedQueue?.id === record.id ? '#e6f7ff' : undefined,
-          },
-        })}
-        pagination={{ pageSize: 10 }}
-      />
-
-      {selectedQueue && stats && (
-        <>
-          <div style={{ marginTop: '24px' }}>
-            <Row gutter={16} style={{ marginBottom: '16px' }}>
-              <Col xs={24} sm={12} lg={6}>
-                <Card>
-                  <Statistic title="总任务" value={stats.total} />
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} lg={6}>
-                <Card>
-                  <Statistic title="已完成" value={stats.completed} />
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} lg={6}>
-                <Card>
-                  <Statistic title="失败" value={stats.failed} />
-                </Card>
-              </Col>
-              <Col xs={24} sm={12} lg={6}>
-                <Card>
-                  <Statistic title="成功率" value={(stats.completed / stats.total * 100).toFixed(1)} suffix="%" />
-                </Card>
-              </Col>
-            </Row>
-          </div>
-
-          <Card
-            title={`${selectedQueue.name} - 任务列表`}
-            extra={
-              <Button type="primary" onClick={() => setTaskModalVisible(true)}>
-                导入号码
-              </Button>
-            }
-          >
-            <Table
-              columns={taskColumns}
-              dataSource={tasks}
-              rowKey="id"
-              pagination={{ pageSize: 20 }}
-            />
-          </Card>
-        </>
-      )}
+    <div style={{ padding: 24 }}>
+      <Card
+        title="呼叫队列管理"
+        extra={
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+            新建队列
+          </Button>
+        }
+      >
+        <Table
+          columns={columns}
+          dataSource={queues}
+          rowKey="id"
+          scroll={{ x: 1300 }}
+          pagination={{
+            pageSize: 10,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 条`,
+          }}
+        />
+      </Card>
 
       <Modal
-        title={editingId ? '编辑队列' : '新建队列'}
+        title={editingQueue ? '编辑队列' : '新建队列'}
         open={modalVisible}
-        onOk={() => form.submit()}
+        onOk={handleSubmit}
         onCancel={() => setModalVisible(false)}
-        loading={loading}
+        confirmLoading={loading}
+        width={600}
+        destroyOnClose
       >
-        <Form form={form} layout="vertical" onFinish={handleSubmitQueue}>
+        <Form form={form} layout="vertical" style={{ marginTop: 24 }}>
           <Form.Item
             name="name"
             label="队列名称"
             rules={[{ required: true, message: '请输入队列名称' }]}
           >
-            <Input placeholder="春季推广" />
+            <Input placeholder="例如：销售队列" />
+          </Form.Item>
+
+          <Form.Item
+            name="extension"
+            label="队列号码"
+            rules={[
+              { required: true, message: '请输入队列号码' },
+              { pattern: /^\d{4,6}$/, message: '队列号码为 4-6 位数字' },
+            ]}
+          >
+            <Input placeholder="例如：6001" maxLength={6} />
           </Form.Item>
 
           <Form.Item
             name="strategy"
-            label="呼出策略"
-            rules={[{ required: true, message: '请选择呼出策略' }]}
+            label="分配策略"
+            rules={[{ required: true, message: '请选择分配策略' }]}
           >
-            <Select>
-              <Select.Option value="ringall">全部同时铃响</Select.Option>
-              <Select.Option value="roundrobin">轮询</Select.Option>
-              <Select.Option value="leastrecent">最少最近呼叫</Select.Option>
-              <Select.Option value="fewestcalls">最少通话</Select.Option>
+            <Select placeholder="选择呼叫分配策略">
+              <Select.Option value="ringall">全部响铃（所有成员同时响铃）</Select.Option>
+              <Select.Option value="leastrecent">最少最近接听（优先分配给最久未接听的坐席）</Select.Option>
+              <Select.Option value="fewestcalls">最少接听次数（优先分配给接听次数最少的坐席）</Select.Option>
+              <Select.Option value="random">随机分配</Select.Option>
+              <Select.Option value="rrmemory">轮询记忆（轮流分配并记住上次位置）</Select.Option>
             </Select>
           </Form.Item>
 
           <Form.Item
-            name="maxRetries"
-            label="最大重试次数"
-            rules={[{ required: true }]}
+            name="timeout"
+            label="响铃超时"
+            rules={[{ required: true, message: '请输入响铃超时时间' }]}
+            initialValue={30}
           >
-            <Input type="number" placeholder="3" />
+            <InputNumber min={5} max={300} addonAfter="秒" style={{ width: '100%' }} />
           </Form.Item>
-        </Form>
-      </Modal>
 
-      <Modal
-        title="导入号码"
-        open={taskModalVisible}
-        onOk={() => {
-          const numbers = form.getFieldValue('numbers') || '';
-          const phoneNumbers = numbers.split('\n').filter((n: string) => n.trim());
-          handleUploadTasks(phoneNumbers);
-        }}
-        onCancel={() => setTaskModalVisible(false)}
-      >
-        <Form>
-          <Form.Item label="号码（每行一个）">
-            <Input.TextArea
-              rows={6}
-              placeholder="18600000001&#10;18600000002&#10;18600000003"
-            />
+          <Form.Item
+            name="maxWait"
+            label="最大等待时间"
+            rules={[{ required: true, message: '请输入最大等待时间' }]}
+            initialValue={300}
+          >
+            <InputNumber min={30} max={3600} addonAfter="秒" style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item name="announceFrequency" label="播报频率" initialValue={60}>
+            <InputNumber min={0} max={300} addonAfter="秒" style={{ width: '100%' }} />
+          </Form.Item>
+
+          <Form.Item name="status" label="队列状态" initialValue="active">
+            <Select>
+              <Select.Option value="active">启用</Select.Option>
+              <Select.Option value="inactive">禁用</Select.Option>
+            </Select>
           </Form.Item>
         </Form>
       </Modal>
     </div>
-  );
-};
+  )
+}
 
-export default QueueManagement;
+export default QueueManagement

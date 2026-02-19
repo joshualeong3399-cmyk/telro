@@ -1,60 +1,43 @@
-import React, { ReactNode, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Spin } from 'antd';
-import Cookie from 'js-cookie';
-import { useAuthStore } from '@/store/authStore';
-import api from '@/services/api';
+import { Navigate } from 'react-router-dom'
+import { Result, Button } from 'antd'
+import type { ReactNode } from 'react'
+import { getCookie, TOKEN_KEY } from '@/utils/cookie'
+import { useAuthStore } from '@/store/authStore'
+import type { UserRole } from '@/types/auth'
 
 interface ProtectedRouteProps {
-  children: ReactNode;
+  children: ReactNode
+  /** 允许访问的角色列表，不填则仅检查登录状态 */
+  allowedRoles?: UserRole[]
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
-  const navigate = useNavigate();
-  const user    = useAuthStore((s) => s.user);
-  const token   = useAuthStore((s) => s.token);
-  const setUser = useAuthStore((s) => s.setUser);
-  const logout  = useAuthStore((s) => s.logout);
-  const [restoring, setRestoring] = useState(false);
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, allowedRoles }) => {
+  // 优先从 Cookie 读 token（SSR 安全，也支持页面刷新后恢复）
+  const token = getCookie(TOKEN_KEY)
+  const { user, hasAnyRole } = useAuthStore()
 
-  const cookieToken = Cookie.get('token');
-  const hasToken = !!(token || cookieToken);
-
-  useEffect(() => {
-    if (!hasToken) {
-      navigate('/login');
-      return;
-    }
-    // Token present but user missing (hard refresh cleared memory store)
-    if (hasToken && !user) {
-      setRestoring(true);
-      api
-        .get('/users/me')
-        .then((res) => {
-          const u = res.data;
-          setUser({ id: u.id, username: u.username, role: u.role, email: u.email });
-        })
-        .catch(() => {
-          logout();
-          Cookie.remove('token');
-          navigate('/login');
-        })
-        .finally(() => setRestoring(false));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasToken]);
-
-  if (!hasToken) return null;
-
-  if (restoring) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <Spin size="large" tip="正在恢复登录状态..." />
-      </div>
-    );
+  // 未登录 → 跳转登录页
+  if (!token) {
+    return <Navigate to="/login" replace />
   }
 
-  return <>{children}</>;
-};
+  // 指定了角色限制，但当前用户角色不符合
+  if (allowedRoles && allowedRoles.length > 0 && !hasAnyRole(allowedRoles)) {
+    return (
+      <Result
+        status="403"
+        title="403"
+        subTitle={`您的角色（${user?.role ?? '未知'}）无权访问此页面`}
+        extra={
+          <Button type="primary" onClick={() => history.back()}>
+            返回上一页
+          </Button>
+        }
+      />
+    )
+  }
 
-export default ProtectedRoute;
+  return <>{children}</>
+}
+
+export default ProtectedRoute

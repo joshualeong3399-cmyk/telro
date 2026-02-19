@@ -1,36 +1,45 @@
-import { create } from 'zustand';
-import { Extension } from '@/services/extension';
+import { create } from 'zustand'
 
-interface ExtensionStore {
-  extensions: Extension[];
-  selectedExtension: Extension | null;
-  loading: boolean;
-  
-  setExtensions: (extensions: Extension[]) => void;
-  addExtension: (extension: Extension) => void;
-  updateExtension: (id: string, data: Partial<Extension>) => void;
-  removeExtension: (id: string) => void;
-  selectExtension: (extension: Extension | null) => void;
-  setLoading: (loading: boolean) => void;
+export type ExtensionStatus = 'idle' | 'ringing' | 'in-use' | 'unavailable' | 'unknown'
+
+export interface ExtensionState {
+  extensionId: number
+  extensionNumber: string
+  displayName: string
+  status: ExtensionStatus
+  currentCallId?: string
+  lastUpdate: number
 }
 
-export const useExtensionStore = create<ExtensionStore>((set) => ({
-  extensions: [],
-  selectedExtension: null,
-  loading: false,
-  
-  setExtensions: (extensions) => set({ extensions }),
-  addExtension: (extension) => set((state) => ({
-    extensions: [extension, ...state.extensions],
-  })),
-  updateExtension: (id, data) => set((state) => ({
-    extensions: state.extensions.map((ext) =>
-      ext.id === id ? { ...ext, ...data } : ext
-    ),
-  })),
-  removeExtension: (id) => set((state) => ({
-    extensions: state.extensions.filter((ext) => ext.id !== id),
-  })),
-  selectExtension: (extension) => set({ selectedExtension: extension }),
-  setLoading: (loading) => set({ loading }),
-}));
+interface ExtensionStoreState {
+  extensions: Record<string, ExtensionState>  // keyed by extensionNumber
+  setExtensionStatus: (ext: ExtensionState) => void
+  setMultiple: (exts: ExtensionState[]) => void
+  getStatus: (extensionNumber: string) => ExtensionStatus
+  reset: () => void
+}
+
+export const useExtensionStore = create<ExtensionStoreState>((set, get) => ({
+  extensions: {},
+
+  setExtensionStatus: (ext) =>
+    set((s) => ({
+      extensions: {
+        ...s.extensions,
+        [ext.extensionNumber]: { ...ext, lastUpdate: Date.now() },
+      },
+    })),
+
+  setMultiple: (exts) =>
+    set((s) => {
+      const updates = Object.fromEntries(
+        exts.map((e) => [e.extensionNumber, { ...e, lastUpdate: Date.now() }]),
+      )
+      return { extensions: { ...s.extensions, ...updates } }
+    }),
+
+  getStatus: (extensionNumber) =>
+    get().extensions[extensionNumber]?.status ?? 'unknown',
+
+  reset: () => set({ extensions: {} }),
+}))

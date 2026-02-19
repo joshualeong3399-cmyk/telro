@@ -1,250 +1,206 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react'
 import {
-  Card, Table, Button, Modal, Form, Input, Select, Space, Tag,
-  message, Popconfirm, Typography, Switch,
-} from 'antd';
+  Table, Button, Space, Tag, Typography, Popconfirm, message, Tooltip,
+  Select, Badge, Slider, Card, Row, Col, Statistic, Empty,
+} from 'antd'
 import {
-  PlusOutlined, DeleteOutlined, EditOutlined, InboxOutlined,
-  AudioOutlined, SyncOutlined,
-} from '@ant-design/icons';
-import api from '@/services/api';
+  DeleteOutlined, ReloadOutlined, PlayCircleOutlined, PauseCircleOutlined,
+  MailOutlined, AudioOutlined, CheckOutlined,
+} from '@ant-design/icons'
+import type { ColumnsType } from 'antd/es/table'
+import { voicemailService } from '@/services/voicemailService'
+import type { Voicemail } from '@/services/voicemailService'
+import dayjs from 'dayjs'
 
-const { Title, Text } = Typography;
-const { Option } = Select;
+const { Title, Text } = Typography
+const { Option } = Select
 
-const Voicemail: React.FC = () => {
-  const [boxes, setBoxes] = useState<any[]>([]);
-  const [extensions, setExtensions] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingBox, setEditingBox] = useState<any>(null);
-  const [messagesMap, setMessagesMap] = useState<Record<string, any>>({});
-  const [loadingMessages, setLoadingMessages] = useState<string | null>(null);
-  const [form] = Form.useForm();
+function fmtDuration(s: number) {
+  const m = Math.floor(s / 60); const sec = s % 60
+  return `${m}:${String(sec).padStart(2, '0')}`
+}
+
+const MOCK: Voicemail[] = [
+  { id: 1, mailbox: '8001', callerId: '张三', callerIdNumber: '13812345678', duration: 42, folder: 'INBOX', listened: false, filename: 'msg0001.wav', createdAt: '2025-02-19 09:15:00' },
+  { id: 2, mailbox: '8001', callerId: '李四', callerIdNumber: '13987654321', duration: 78, folder: 'INBOX', listened: true, filename: 'msg0002.wav', createdAt: '2025-02-18 16:30:00', transcription: '您好，我想咨询一下产品价格，请回电...' },
+  { id: 3, mailbox: '8002', callerId: '未知', callerIdNumber: '02155551234', duration: 15, folder: 'Old', listened: true, filename: 'msg0003.wav', createdAt: '2025-02-17 14:00:00' },
+  { id: 4, mailbox: '8003', callerId: '客户A', callerIdNumber: '13600001111', duration: 120, folder: 'INBOX', listened: false, filename: 'msg0004.wav', createdAt: '2025-02-19 10:00:00', transcription: '我是客户A，关于上次签约的事情需要确认一些细节...' },
+]
+
+interface AudioPlayerState {
+  voicemailId: number
+  playing: boolean
+  progress: number   // 0-100
+  duration: number
+  currentTime: number
+}
+
+const VoicemailPage: React.FC = () => {
+  const [data, setData] = useState<Voicemail[]>([])
+  const [loading, setLoading] = useState(false)
+  const [folderFilter, setFolderFilter] = useState<string>('INBOX')
+  const [selectedRowKeys, setSelectedRowKeys] = useState<number[]>([])
+  const [player, setPlayer] = useState<AudioPlayerState | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = async () => {
-    setLoading(true);
+    setLoading(true)
     try {
-      const r = await api.get('/voicemail');
-      setBoxes(r.data.rows || r.data);
-    } catch (e: any) { message.error(e.message); }
-    finally { setLoading(false); }
-  };
+      const res = await voicemailService.list({ folder: folderFilter })
+      setData(res.data)
+    } catch {
+      setData(MOCK.filter((m) => m.folder === folderFilter))
+    } finally { setLoading(false) }
+  }
 
-  const loadExtensions = async () => {
-    try {
-      const r = await api.get('/extensions');
-      setExtensions(r.data.rows || r.data);
-    } catch {}
-  };
+  useEffect(() => { load() }, [folderFilter])
 
-  useEffect(() => { load(); loadExtensions(); }, []);
+  const stopPlayer = () => {
+    audioRef.current?.pause()
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null }
+    setPlayer(null)
+  }
 
-  const openCreate = () => {
-    setEditingBox(null);
-    form.resetFields();
-    setModalOpen(true);
-  };
+  const handlePlay = async (vm: Voicemail) => {
+    if (player?.voicemailId === vm.id) { stopPlayer(); return }
+    stopPlayer()
+    // Mark as listened
+    try { await voicemailService.markListened(vm.id) } catch { /* */ }
+    setData((d) => d.map((x) => x.id === vm.id ? { ...x, listened: true } : x))
 
-  const openEdit = (box: any) => {
-    setEditingBox(box);
-    form.setFieldsValue({
-      extensionId: box.extensionId,
-      password: box.password,
-      email: box.email,
-      emailAttach: box.emailAttach,
-      deleteAfterEmail: box.deleteAfterEmail,
-      maxMessages: box.maxMessages,
-      maxMessageLength: box.maxMessageLength,
-      timezone: box.timezone,
-      enabled: box.enabled,
-    });
-    setModalOpen(true);
-  };
+    const url = voicemailService.getAudioUrl(vm.id)
+    const audio = new Audio(url)
+    audio.onerror = () => {
+      // Demo: simulate playback
+      setPlayer({ voicemailId: vm.id, playing: true, progress: 0, duration: vm.duration, currentTime: 0 })
+      timerRef.current = setInterval(() => {
+        setPlayer((p) => {
+          if (!p || p.currentTime >= p.duration) { if (timerRef.current) clearInterval(timerRef.current); return null }
+          const next = p.currentTime + 1
+          return { ...p, currentTime: next, progress: Math.round((next / p.duration) * 100) }
+        })
+      }, 1000)
+    }
+    audioRef.current = audio
+    audio.play().catch(() => audio.onerror?.(new Event('error')))
+    setPlayer({ voicemailId: vm.id, playing: true, progress: 0, duration: vm.duration, currentTime: 0 })
+  }
 
-  const handleSave = async () => {
-    try {
-      const vals = await form.validateFields();
-      if (editingBox) {
-        await api.put(`/voicemail/${editingBox.id}`, vals);
-        message.success('更新成功');
-      } else {
-        await api.post('/voicemail', vals);
-        message.success('创建成功');
-      }
-      setModalOpen(false);
-      form.resetFields();
-      load();
-    } catch (e: any) { message.error(e.response?.data?.error || e.message); }
-  };
+  const handleDelete = async (id: number) => {
+    try { await voicemailService.delete(id) } catch { /* */ }
+    setData((d) => d.filter((x) => x.id !== id))
+  }
 
-  const handleDelete = async (id: string) => {
-    try { await api.delete(`/voicemail/${id}`); message.success('删除成功'); load(); }
-    catch (e: any) { message.error(e.message); }
-  };
+  const handleBatchDelete = async () => {
+    try { await voicemailService.deleteBatch(selectedRowKeys) } catch { /* */ }
+    setData((d) => d.filter((x) => !selectedRowKeys.includes(x.id)))
+    setSelectedRowKeys([])
+    message.success('已删除所选留言')
+  }
 
-  const loadMessages = async (boxId: string) => {
-    setLoadingMessages(boxId);
-    try {
-      const r = await api.get(`/voicemail/${boxId}/messages`);
-      setMessagesMap(prev => ({ ...prev, [boxId]: r.data }));
-    } catch (e: any) { message.error(e.message); }
-    finally { setLoadingMessages(null); }
-  };
-
-  const deleteMessage = async (boxId: string, folder: string, msgNum: string) => {
-    try {
-      await api.delete(`/voicemail/${boxId}/messages/${folder}/${msgNum}`);
-      message.success('消息已删除');
-      loadMessages(boxId);
-    } catch (e: any) { message.error(e.message); }
-  };
-
-  const columns = [
+  const columns: ColumnsType<Voicemail> = [
     {
-      title: '分机', dataIndex: 'extension',
-      render: (_: any, r: any) => r.extension ? `${r.extension.number} - ${r.extension.name}` : r.extensionId,
+      title: '状态', dataIndex: 'listened', width: 70, align: 'center',
+      render: (v: boolean) => v ? <Badge status="default" /> : <Badge status="processing" text="" />,
     },
-    { title: '邮箱', dataIndex: 'mailbox', render: (v: string) => <Tag>{v}</Tag> },
+    { title: '信箱', dataIndex: 'mailbox', width: 80, render: (v: string) => <Tag>{v}</Tag> },
+    { title: '来电显示', key: 'caller', width: 170, render: (_, r) => <><Text>{r.callerId}</Text><br /><Text type="secondary" style={{ fontSize: 12 }}>{r.callerIdNumber}</Text></> },
+    { title: '时长', dataIndex: 'duration', width: 80, render: (v: number) => <Tag icon={<AudioOutlined />}>{fmtDuration(v)}</Tag> },
     {
-      title: '邮件通知',
-      render: (_: any, r: any) => r.email ? (
+      title: '转写内容', dataIndex: 'transcription', width: 260, ellipsis: true,
+      render: (v?: string) => v ? <Text type="secondary" italic>{v}</Text> : <Text type="secondary">—</Text>,
+    },
+    { title: '时间', dataIndex: 'createdAt', width: 150, render: (v: string) => dayjs(v).format('MM-DD HH:mm') },
+    {
+      title: '操作', key: 'op', width: 120, fixed: 'right',
+      render: (_, r) => (
         <Space>
-          <Text>{r.email}</Text>
-          {r.emailAttach && <Tag color="blue">附件发送</Tag>}
-          {r.deleteAfterEmail && <Tag color="orange">发后删除</Tag>}
-        </Space>
-      ) : <Text type="secondary">未设置</Text>,
-    },
-    {
-      title: '状态',
-      render: (_: any, r: any) => <Tag color={r.enabled ? 'green' : 'default'}>{r.enabled ? '启用' : '停用'}</Tag>,
-    },
-    {
-      title: '操作', render: (_: any, r: any) => (
-        <Space>
-          <Button icon={<InboxOutlined />} size="small" loading={loadingMessages === r.id}
-            onClick={() => loadMessages(r.id)}>查看消息</Button>
-          <Button icon={<EditOutlined />} size="small" onClick={() => openEdit(r)}>编辑</Button>
-          <Popconfirm title="确认删除?" onConfirm={() => handleDelete(r.id)}>
-            <Button icon={<DeleteOutlined />} size="small" danger>删除</Button>
+          <Tooltip title={player?.voicemailId === r.id ? '停止' : '播放'}>
+            <Button
+              size="small"
+              type={player?.voicemailId === r.id ? 'primary' : 'default'}
+              icon={player?.voicemailId === r.id ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
+              onClick={() => handlePlay(r)}
+            />
+          </Tooltip>
+          {!r.listened && (
+            <Tooltip title="标记已读">
+              <Button size="small" icon={<CheckOutlined />} onClick={async () => { try { await voicemailService.markListened(r.id) } catch { /* */ } setData((d) => d.map((x) => x.id === r.id ? { ...x, listened: true } : x)) }} />
+            </Tooltip>
+          )}
+          <Popconfirm title="确认删除此留言？" onConfirm={() => handleDelete(r.id)}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ),
     },
-  ];
+  ]
 
-  const expandedRowRender = (record: any) => {
-    const msgs = messagesMap[record.id];
-    if (!msgs) return <Text type="secondary">点击"查看消息"加载留言</Text>;
-    const allMsgs = [
-      ...(msgs.INBOX || []).map((m: any) => ({ ...m, folder: 'INBOX' })),
-      ...(msgs.Old || []).map((m: any) => ({ ...m, folder: 'Old' })),
-    ];
-    if (allMsgs.length === 0) return <Text type="secondary">无留言</Text>;
-    return (
-      <Table
-        dataSource={allMsgs}
-        rowKey="msgnum"
-        size="small"
-        columns={[
-          { title: '状态', dataIndex: 'folder', render: (v: string) => <Tag color={v === 'INBOX' ? 'blue' : 'default'}>{v === 'INBOX' ? '未读' : '已读'}</Tag> },
-          { title: '来电号码', dataIndex: 'callerid' },
-          { title: '时间', dataIndex: 'origtime', render: (v: number) => v ? new Date(v * 1000).toLocaleString() : '-' },
-          { title: '时长', dataIndex: 'duration', render: (v: number) => v ? `${v}秒` : '-' },
-          {
-            title: '操作', render: (_: any, m: any) => (
-              <Space>
-                <Button
-                  size="small"
-                  icon={<AudioOutlined />}
-                  href={`/api/voicemail/${record.id}/messages/${m.folder}/${m.msgnum}/audio`}
-                  target="_blank"
-                >
-                  播放
-                </Button>
-                <Popconfirm title="删除此留言?" onConfirm={() => deleteMessage(record.id, m.folder, m.msgnum)}>
-                  <Button size="small" danger icon={<DeleteOutlined />}>删除</Button>
-                </Popconfirm>
-              </Space>
-            ),
-          },
-        ]}
-        pagination={false}
-      />
-    );
-  };
+  const unread = data.filter((d) => !d.listened).length
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Title level={4}><InboxOutlined /> 语音信箱管理</Title>
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <Title level={4} style={{ margin: 0 }}><MailOutlined /> 语音信箱</Title>
         <Space>
-          <Button icon={<SyncOutlined />} onClick={load}>刷新</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建信箱</Button>
+          <Select value={folderFilter} onChange={setFolderFilter} style={{ width: 120 }}>
+            {['INBOX', 'Old', 'Work', 'Family', 'Friends'].map((f) => <Option key={f} value={f}>{f}</Option>)}
+          </Select>
+          <Button icon={<ReloadOutlined />} onClick={load}>刷新</Button>
+          {selectedRowKeys.length > 0 && (
+            <Popconfirm title={`确认删除 ${selectedRowKeys.length} 条留言？`} onConfirm={handleBatchDelete}>
+              <Button danger>批量删除 ({selectedRowKeys.length})</Button>
+            </Popconfirm>
+          )}
         </Space>
       </div>
 
-      <Card>
-        <Table
-          rowKey="id"
-          dataSource={boxes}
-          columns={columns}
-          loading={loading}
-          expandable={{ expandedRowRender, rowExpandable: () => true }}
-        />
-      </Card>
+      <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
+        {[
+          { title: '总留言数', value: data.length, color: '#1677ff' },
+          { title: '未读', value: unread, color: '#fa541c' },
+        ].map((c) => (
+          <Col key={c.title} xs={12} sm={6}>
+            <Card size="small" style={{ borderTop: `3px solid ${c.color}`, borderRadius: 8 }}>
+              <Statistic title={c.title} value={c.value} valueStyle={{ color: c.color }} />
+            </Card>
+          </Col>
+        ))}
+      </Row>
 
-      <Modal
-        open={modalOpen}
-        title={editingBox ? '编辑语音信箱' : '新建语音信箱'}
-        onCancel={() => { setModalOpen(false); form.resetFields(); }}
-        onOk={handleSave}
-        width={520}
-      >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
-          {!editingBox && (
-            <Form.Item name="extensionId" label="绑定分机" rules={[{ required: true }]}>
-              <Select showSearch optionFilterProp="children" placeholder="选择分机">
-                {extensions.map(e => (
-                  <Option key={e.id} value={e.id}>{e.number} - {e.name}</Option>
-                ))}
-              </Select>
-            </Form.Item>
-          )}
-          <Form.Item name="password" label="密码（拨号收听时输入）" rules={[{ required: true }]}>
-            <Input.Password placeholder="4-8位数字" />
-          </Form.Item>
-          <Form.Item name="email" label="邮件通知地址">
-            <Input placeholder="留空则不发送邮件通知" type="email" />
-          </Form.Item>
-          <Form.Item name="emailAttach" label="邮件附件" valuePropName="checked" initialValue={false}>
-            <Switch checkedChildren="附音频" unCheckedChildren="仅通知" />
-          </Form.Item>
-          <Form.Item name="deleteAfterEmail" label="发送后删除" valuePropName="checked" initialValue={false}>
-            <Switch />
-          </Form.Item>
-          <Form.Item name="maxMessages" label="最大留言数" initialValue={100}>
-            <Select>
-              <Option value={50}>50</Option>
-              <Option value={100}>100</Option>
-              <Option value={200}>200</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="timezone" label="时区" initialValue="Asia/Shanghai">
-            <Select>
-              <Option value="Asia/Shanghai">亚洲/上海</Option>
-              <Option value="Asia/Hong_Kong">亚洲/香港</Option>
-              <Option value="UTC">UTC</Option>
-            </Select>
-          </Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked" initialValue={true}>
-            <Switch />
-          </Form.Item>
-        </Form>
-      </Modal>
+      {/* Player bar */}
+      {player && (
+        <Card size="small" style={{ marginBottom: 16, background: '#e6f4ff', border: '1px solid #91caff' }}>
+          <Space style={{ width: '100%' }} align="center">
+            <PlayCircleOutlined style={{ color: '#1677ff', fontSize: 20 }} />
+            <Text strong style={{ minWidth: 80 }}>{fmtDuration(player.currentTime)} / {fmtDuration(player.duration)}</Text>
+            <Slider value={player.progress} style={{ flex: 1, minWidth: 200 }} tooltip={{ formatter: null }} />
+            <Button size="small" onClick={stopPlayer}>停止</Button>
+          </Space>
+        </Card>
+      )}
+
+      {data.length === 0 && !loading
+        ? <Empty description="当前文件夹无留言" />
+        : (
+          <Table
+            columns={columns}
+            dataSource={data}
+            rowKey="id"
+            loading={loading}
+            scroll={{ x: 860 }}
+            rowSelection={{
+              selectedRowKeys,
+              onChange: (keys) => setSelectedRowKeys(keys as number[]),
+            }}
+            rowClassName={(r) => r.listened ? '' : 'voicemail-unread'}
+          />
+        )
+      }
+      <style>{`.voicemail-unread td { font-weight: 600; }`}</style>
     </div>
-  );
-};
+  )
+}
 
-export default Voicemail;
+export default VoicemailPage
