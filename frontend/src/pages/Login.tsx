@@ -21,10 +21,10 @@ const Login: React.FC = () => {
         password: values.password,
       });
       
-      // response is already response.data due to axios interceptor
-      setUser(response.user);
-      setToken(response.token);
-      Cookie.set('token', response.token);
+      // Use response.data since axios interceptor returns full response
+      setUser(response.data.user);
+      setToken(response.data.token);
+      Cookie.set('token', response.data.token);
       
       message.success('登录成功');
       navigate('/dashboard');
