@@ -78,9 +78,9 @@ const AiFlowBuilder: React.FC = () => {
 
   useEffect(() => {
     loadFlows();
-    axios.get('/api/ai/audio').then(r => setAudioFiles(r.data.rows || r.data)).catch(() => {});
+    axios.get('/api/audio-files').then(r => setAudioFiles(r.data.rows || r.data)).catch(() => {});
     axios.get('/api/extensions').then(r => setExtensions(r.data.rows || r.data)).catch(() => {});
-    axios.get('/api/queues').then(r => setQueues(r.data.rows || r.data)).catch(() => {});
+    axios.get('/api/queue').then(r => setQueues(r.data.rows || r.data)).catch(() => {});
   }, []);
 
   const loadFlows = async () => {

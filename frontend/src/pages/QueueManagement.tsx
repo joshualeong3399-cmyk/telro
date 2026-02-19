@@ -53,7 +53,7 @@ const QueueManagement: React.FC = () => {
     setLoading(true);
     try {
       const response = await queueAPI.getList({ limit: 100 });
-      setQueues(response.data.data ?? (response.data as any));
+      setQueues(response.data.rows ?? (response.data as any));
     } catch (error) {
       message.error('加载队列列表失败');
     } finally {
@@ -67,7 +67,7 @@ const QueueManagement: React.FC = () => {
         queueAPI.getTasks(queueId, { limit: 100 }),
         queueAPI.getStats(queueId),
       ]);
-      setTasks(tasksRes.data.data ?? (tasksRes.data as any));
+      setTasks(tasksRes.data.rows ?? (tasksRes.data as any));
       setStats(statsRes);
     } catch (error) {
       message.error('加载队列详情失败');

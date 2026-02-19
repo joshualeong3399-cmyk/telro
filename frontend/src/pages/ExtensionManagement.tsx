@@ -59,7 +59,7 @@ const ExtensionManagement: React.FC = () => {
     setStoreLoading(true);
     try {
       const response = await extensionAPI.getList({ limit: 100 });
-      setExtensions(response.data.data ?? (response.data as any));
+      setExtensions(response.data.rows ?? (response.data as any));
     } catch (error) {
       message.error('加载分机列表失败');
     } finally {

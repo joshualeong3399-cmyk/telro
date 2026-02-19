@@ -37,7 +37,7 @@ const CallHistory: React.FC = () => {
         limit: 100,
         ...filters,
       });
-      setCalls(response.data.data ?? (response.data as any));
+      setCalls(response.data.rows ?? (response.data as any));
     } catch (error) {
       message.error('加载通话记录失败');
     } finally {

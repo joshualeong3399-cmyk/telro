@@ -32,7 +32,7 @@ const AudioFiles: React.FC = () => {
     setLoading(true);
     try {
       const params = category && category !== 'all' ? `?category=${category}` : '';
-      const r = await axios.get(`/api/ai/audio${params}`);
+      const r = await axios.get(`/api/audio-files${params}`);
       setFiles(r.data.rows || r.data);
     } catch (e: any) { message.error(e.message); }
     finally { setLoading(false); }
@@ -54,7 +54,7 @@ const AudioFiles: React.FC = () => {
       formData.append('name', vals.name || fileList[0].name);
       formData.append('description', vals.description || '');
       formData.append('category', vals.category || 'other');
-      await axios.post('/api/ai/audio', formData, {
+      await axios.post('/api/audio-files', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       message.success('上传成功');
@@ -66,7 +66,7 @@ const AudioFiles: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    try { await axios.delete(`/api/ai/audio/${id}`); message.success('删除成功'); load(activeTab); }
+    try { await axios.delete(`/api/audio-files/${id}`); message.success('删除成功'); load(activeTab); }
     catch (e: any) { message.error(e.message); }
   };
 

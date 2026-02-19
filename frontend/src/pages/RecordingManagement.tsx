@@ -28,7 +28,7 @@ const RecordingManagement: React.FC = () => {
     setLoading(true);
     try {
       const response = await recordingAPI.getList({ limit: 100 });
-      setRecordings(response.data.data ?? (response.data as any));
+      setRecordings(response.data.rows ?? (response.data as any));
     } catch (error) {
       message.error('加载录音列表失败');
     } finally {

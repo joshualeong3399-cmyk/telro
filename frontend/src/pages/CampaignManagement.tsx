@@ -88,14 +88,14 @@ const CampaignManagement: React.FC = () => {
         axios.get('/api/extensions'),
         axios.get('/api/ai/flows'),
         axios.get('/api/audio-files'),
-        axios.get('/api/ivrs'),
+        axios.get('/api/ivr'),
       ]);
       setCampaigns(cR.data.rows || cR.data);
       setTrunks(tR.data.rows || tR.data);
       setExtensions(eR.data.rows || eR.data);
       setAiFlows(aR.data.rows || aR.data);
       setAudioFiles(afR.data.rows || afR.data || []);
-      setIvrs(iR.data.rows || iR.data || []);
+      setIvrs((iR.data.rows || iR.data || []).map ? (iR.data.rows || iR.data || []) : []);
     } catch (e: any) { message.error(e.message); }
     finally { setLoading(false); }
   };
