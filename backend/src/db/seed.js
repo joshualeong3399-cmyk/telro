@@ -85,7 +85,7 @@ async function seed() {
       password: agentPassword,
       fullName: '销售代理1',
       extensionId: ext2.id,
-      role: 'agent',
+      role: 'employee',
       department: 'Sales',
       enabled: true,
     });
@@ -96,7 +96,7 @@ async function seed() {
       password: agentPassword,
       fullName: '销售代理2',
       extensionId: ext3.id,
-      role: 'agent',
+      role: 'employee',
       department: 'Sales',
       enabled: true,
     });
