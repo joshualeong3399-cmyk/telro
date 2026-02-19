@@ -29,6 +29,7 @@ import {
   CloseCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import Cookie from 'js-cookie';
 
 const { Sider, Content } = Layout;
 const { TextArea } = Input;
@@ -82,7 +83,7 @@ const folderLabels: Record<string, string> = {
 };
 
 async function apiFetch(path: string, opts?: RequestInit) {
-  const token = localStorage.getItem('token');
+  const token = Cookie.get('token');
   const res = await fetch(`${BASE}${path}`, {
     ...opts,
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...opts?.headers },

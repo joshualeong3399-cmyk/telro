@@ -4,12 +4,12 @@ import {
   Switch, Space, Tag, message, Popconfirm, Typography,
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined, SyncOutlined } from '@ant-design/icons';
-import axios from 'axios';
+import api from '@/services/api';
 
 const { Title } = Typography;
 const { Option } = Select;
 
-const API = '/api/ring-groups';
+const API = '/ring-groups';
 
 const RingGroups: React.FC = () => {
   const [groups, setGroups] = useState<any[]>([]);
@@ -23,8 +23,8 @@ const RingGroups: React.FC = () => {
     setLoading(true);
     try {
       const [rg, ext] = await Promise.all([
-        axios.get(API),
-        axios.get('/api/extensions'),
+        api.get(API),
+        api.get('/extensions'),
       ]);
       setGroups(rg.data.rows || rg.data);
       setExtensions(ext.data.rows || ext.data);
@@ -40,8 +40,8 @@ const RingGroups: React.FC = () => {
   const handleSave = async () => {
     try {
       const vals = await form.validateFields();
-      if (editing) await axios.put(`${API}/${editing.id}`, vals);
-      else await axios.post(API, vals);
+      if (editing) await api.put(`${API}/${editing.id}`, vals);
+      else await api.post(API, vals);
       message.success('保存成功');
       setModalOpen(false);
       load();
@@ -49,12 +49,12 @@ const RingGroups: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    try { await axios.delete(`${API}/${id}`); message.success('删除成功'); load(); }
+    try { await api.delete(`${API}/${id}`); message.success('删除成功'); load(); }
     catch (e: any) { message.error(e.response?.data?.error || e.message); }
   };
 
   const handleToggle = async (id: string, enabled: boolean) => {
-    try { await axios.patch(`${API}/${id}/enabled`, { enabled }); load(); }
+    try { await api.patch(`${API}/${id}/enabled`, { enabled }); load(); }
     catch (e: any) { message.error(e.response?.data?.error || e.message); }
   };
 

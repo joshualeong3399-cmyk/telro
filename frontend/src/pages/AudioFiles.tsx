@@ -7,7 +7,8 @@ import {
   UploadOutlined, DeleteOutlined, PlayCircleOutlined, SoundOutlined, SyncOutlined,
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
-import axios from 'axios';
+import api from '@/services/api';
+import Cookie from 'js-cookie';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -32,8 +33,8 @@ const AudioFiles: React.FC = () => {
     setLoading(true);
     try {
       const params = category && category !== 'all' ? `?category=${category}` : '';
-      const r = await axios.get(`/api/audio-files${params}`);
-      setFiles(r.data.rows || r.data);
+      const r = await api.get(`/audio-files${params}`);
+      setFiles(r.data.audioFiles || r.data.rows || r.data);
     } catch (e: any) { message.error(e.message); }
     finally { setLoading(false); }
   };
@@ -54,9 +55,7 @@ const AudioFiles: React.FC = () => {
       formData.append('name', vals.name || fileList[0].name);
       formData.append('description', vals.description || '');
       formData.append('category', vals.category || 'other');
-      await axios.post('/api/audio-files', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      await api.post('/audio-files', formData);
       message.success('上传成功');
       setUploadOpen(false);
       uploadForm.resetFields();
@@ -66,19 +65,31 @@ const AudioFiles: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    try { await axios.delete(`/api/audio-files/${id}`); message.success('删除成功'); load(activeTab); }
+    try { await api.delete(`/audio-files/${id}`); message.success('删除成功'); load(activeTab); }
     catch (e: any) { message.error(e.message); }
   };
 
-  const handlePlay = (id: string) => {
+  const handlePlay = async (id: string) => {
     if (audioRef.current) {
       if (playingId === id) {
         audioRef.current.pause();
+        audioRef.current.src = '';
         setPlayingId(null);
       } else {
-        audioRef.current.src = `/api/ai/audio/${id}/play`;
-        audioRef.current.play();
-        setPlayingId(id);
+        try {
+          const token = Cookie.get('token');
+          const resp = await fetch(`/api/ai/audio/${id}/play`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!resp.ok) throw new Error('播放失败');
+          const blob = await resp.blob();
+          const url = URL.createObjectURL(blob);
+          audioRef.current.src = url;
+          audioRef.current.play();
+          setPlayingId(id);
+        } catch (e: any) {
+          message.error(e.message || '播放失败');
+        }
       }
     }
   };

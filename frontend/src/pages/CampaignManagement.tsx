@@ -10,7 +10,7 @@ import {
   ReloadOutlined, SyncOutlined, CloseCircleOutlined, UsergroupAddOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import axios from 'axios';
+import api from '@/services/api';
 import { io as ioClient, Socket } from 'socket.io-client';
 
 const { Title, Text } = Typography;
@@ -35,9 +35,7 @@ const TASK_STATUS_LABELS: Record<string, string> = {
   transferred: '已转接', 'ai-handled': 'AI处理', busy: '忙线',
 };
 
-const SOCKET_URL = (typeof window !== 'undefined' && window.location.hostname)
-  ? `${window.location.protocol}//${window.location.hostname}:3001`
-  : 'http://localhost:3001';
+const SOCKET_URL = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
 
 interface LiveCall {
   taskId: string;
@@ -83,12 +81,12 @@ const CampaignManagement: React.FC = () => {
     setLoading(true);
     try {
       const [cR, tR, eR, aR, afR, iR] = await Promise.all([
-        axios.get('/api/campaigns'),
-        axios.get('/api/sip-trunks'),
-        axios.get('/api/extensions'),
-        axios.get('/api/ai/flows'),
-        axios.get('/api/audio-files'),
-        axios.get('/api/ivr'),
+        api.get('/campaigns'),
+        api.get('/sip-trunks'),
+        api.get('/extensions'),
+        api.get('/ai/flows'),
+        api.get('/audio-files'),
+        api.get('/ivr'),
       ]);
       setCampaigns(cR.data.rows || cR.data);
       setTrunks(tR.data.rows || tR.data);
@@ -142,7 +140,7 @@ const CampaignManagement: React.FC = () => {
   const loadTasks = async (campaignId: string) => {
     setTasksLoading(true);
     try {
-      const r = await axios.get(`/api/campaigns/${campaignId}/tasks`);
+      const r = await api.get(`/campaigns/${campaignId}/tasks`);
       setTasks(r.data.rows || r.data);
     } catch (e: any) { message.error(e.message); }
     finally { setTasksLoading(false); }
@@ -150,7 +148,7 @@ const CampaignManagement: React.FC = () => {
 
   const loadStats = async (campaignId: string) => {
     try {
-      const r = await axios.get(`/api/campaigns/${campaignId}/stats`);
+      const r = await api.get(`/campaigns/${campaignId}/stats`);
       setStats(r.data);
     } catch {}
   };
@@ -203,10 +201,10 @@ const CampaignManagement: React.FC = () => {
         dtmfMaxRetries: dtmfEnabled ? (vals.dtmfMaxRetries ?? 3) : 3,
       };
       if (editingCampaign) {
-        await axios.put(`/api/campaigns/${editingCampaign.id}`, payload);
+        await api.put(`/campaigns/${editingCampaign.id}`, payload);
         message.success('更新成功');
       } else {
-        await axios.post('/api/campaigns', payload);
+        await api.post('/campaigns', payload);
         message.success('创建成功');
       }
       setModalOpen(false);
@@ -215,14 +213,14 @@ const CampaignManagement: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    try { await axios.delete(`/api/campaigns/${id}`); message.success('删除成功'); load(); if (selectedCampaign?.id === id) setSelectedCampaign(null); }
+    try { await api.delete(`/campaigns/${id}`); message.success('删除成功'); load(); if (selectedCampaign?.id === id) setSelectedCampaign(null); }
     catch (e: any) { message.error(e.message); }
   };
 
   const campaignControl = async (id: string, action: 'start' | 'pause' | 'stop') => {
     const labels: any = { start: '启动', pause: '暂停', stop: '停止' };
     try {
-      await axios.post(`/api/campaigns/${id}/${action}`);
+      await api.post(`/campaigns/${id}/${action}`);
       message.success(`${labels[action]}成功`);
       load();
     } catch (e: any) { message.error(e.response?.data?.error || e.message); }
@@ -238,7 +236,7 @@ const CampaignManagement: React.FC = () => {
         return { phone: parts[0] };
       });
       if (!contacts.length) { message.warning('请输入联系人数据'); return; }
-      await axios.post(`/api/campaigns/${selectedCampaign.id}/contacts`, { contacts, maxAttempts: 3 });
+      await api.post(`/campaigns/${selectedCampaign.id}/contacts`, { contacts, maxAttempts: 3 });
       message.success(`成功添加 ${contacts.length} 个联系人`);
       setContactsText('');
       setAddContactsModalOpen(false);
@@ -253,7 +251,7 @@ const CampaignManagement: React.FC = () => {
     formData.append('file', importFile);
     formData.append('maxAttempts', '3');
     try {
-      const r = await axios.post(`/api/campaigns/${selectedCampaign.id}/contacts/import`, formData);
+      const r = await api.post(`/campaigns/${selectedCampaign.id}/contacts/import`, formData);
       message.success(r.data.message || '导入成功');
       setImportModalOpen(false);
       setImportFile(null);
@@ -275,7 +273,7 @@ const CampaignManagement: React.FC = () => {
         if (!transferAiFlow) { message.warning('请选择AI流程'); return; }
         payload.flowId = transferAiFlow;
       }
-      await axios.post(`/api/campaigns/tasks/${call.taskId}/action`, payload);
+      await api.post(`/campaigns/tasks/${call.taskId}/action`, payload);
       message.success(type === 'human' ? '已转接话务员' : '已转入AI流程');
       setActionModalData(null);
       setTransferExt('');
@@ -285,14 +283,14 @@ const CampaignManagement: React.FC = () => {
 
   const handleQueueAction = async (call: LiveCall) => {
     try {
-      await axios.post(`/api/campaigns/tasks/${call.taskId}/action`, { type: 'queue' });
+      await api.post(`/campaigns/tasks/${call.taskId}/action`, { type: 'queue' });
       message.success('已广播给所有话务员，等待接听');
     } catch (e: any) { message.error(e.response?.data?.error || e.message); }
   };
 
   const handleHangup = async (taskId: string) => {
     try {
-      await axios.post(`/api/campaigns/tasks/${taskId}/hangup`);
+      await api.post(`/campaigns/tasks/${taskId}/hangup`);
       message.success('已挂断');
     } catch (e: any) { message.error(e.message); }
   };
@@ -440,7 +438,7 @@ const CampaignManagement: React.FC = () => {
                   onClick={() => {
                     if (call.aiFlowId) {
                       // Direct AI routing if already configured
-                      axios.post(`/api/campaigns/tasks/${call.taskId}/action`, { type: 'ai', flowId: call.aiFlowId })
+                      api.post(`/campaigns/tasks/${call.taskId}/action`, { type: 'ai', flowId: call.aiFlowId })
                         .then(() => message.success('已转入AI'))
                         .catch(e => message.error(e.message));
                     } else {

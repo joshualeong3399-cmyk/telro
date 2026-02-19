@@ -10,7 +10,7 @@ import {
   EditOutlined, CopyOutlined, CodeOutlined, ArrowUpOutlined, ArrowDownOutlined,
   QuestionCircleOutlined, CheckOutlined, CloseOutlined,
 } from '@ant-design/icons';
-import axios from 'axios';
+import api from '@/services/api';
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -78,15 +78,15 @@ const AiFlowBuilder: React.FC = () => {
 
   useEffect(() => {
     loadFlows();
-    axios.get('/api/audio-files').then(r => setAudioFiles(r.data.rows || r.data)).catch(() => {});
-    axios.get('/api/extensions').then(r => setExtensions(r.data.rows || r.data)).catch(() => {});
-    axios.get('/api/queue').then(r => setQueues(r.data.rows || r.data)).catch(() => {});
+    api.get('/audio-files').then(r => setAudioFiles(r.data.rows || r.data)).catch(() => {});
+    api.get('/extensions').then(r => setExtensions(r.data.rows || r.data)).catch(() => {});
+    api.get('/queue').then(r => setQueues(r.data.rows || r.data)).catch(() => {});
   }, []);
 
   const loadFlows = async () => {
     setLoading(true);
     try {
-      const r = await axios.get('/api/ai/flows');
+      const r = await api.get('/ai/flows');
       setFlows(r.data.rows || r.data);
     } catch (e: any) { message.error(e.message); }
     finally { setLoading(false); }
@@ -101,7 +101,7 @@ const AiFlowBuilder: React.FC = () => {
   const createFlow = async () => {
     try {
       const vals = await flowForm.validateFields();
-      const r = await axios.post('/api/ai/flows', { ...vals, steps: [] });
+      const r = await api.post('/ai/flows', { ...vals, steps: [] });
       message.success('话术场景已创建');
       setFlowModalOpen(false);
       flowForm.resetFields();
@@ -112,7 +112,7 @@ const AiFlowBuilder: React.FC = () => {
 
   const duplicateFlow = async (flowId: string) => {
     try {
-      const r = await axios.post(`/api/ai/flows/${flowId}/duplicate`);
+      const r = await api.post(`/ai/flows/${flowId}/duplicate`);
       message.success('场景已复制');
       await loadFlows();
       selectFlow(r.data);
@@ -121,7 +121,7 @@ const AiFlowBuilder: React.FC = () => {
 
   const deleteFlow = async (id: string) => {
     try {
-      await axios.delete(`/api/ai/flows/${id}`);
+      await api.delete(`/ai/flows/${id}`);
       message.success('已删除');
       setSelectedFlow(null);
       setSteps([]);
@@ -132,7 +132,7 @@ const AiFlowBuilder: React.FC = () => {
   const saveFlow = async () => {
     if (!selectedFlow) return;
     try {
-      await axios.put(`/api/ai/flows/${selectedFlow.id}`, {
+      await api.put(`/ai/flows/${selectedFlow.id}`, {
         ...selectedFlow, steps, firstStepId: steps[0]?.id || null,
       });
       message.success('话术流程已保存');
@@ -142,7 +142,7 @@ const AiFlowBuilder: React.FC = () => {
 
   const toggleFlowEnabled = async (flow: any, enabled: boolean) => {
     try {
-      await axios.put(`/api/ai/flows/${flow.id}`, { ...flow, enabled });
+      await api.put(`/ai/flows/${flow.id}`, { ...flow, enabled });
       await loadFlows();
       if (selectedFlow?.id === flow.id) setSelectedFlow((p: any) => ({ ...p, enabled }));
     } catch (e: any) { message.error(e.message); }
@@ -241,7 +241,7 @@ const AiFlowBuilder: React.FC = () => {
     if (!selectedFlow) return;
     await saveFlow();
     try {
-      const r = await axios.get(`/api/ai/flows/${selectedFlow.id}/dialplan`);
+      const r = await api.get(`/ai/flows/${selectedFlow.id}/dialplan`);
       setDialplanModal(r.data.dialplan);
     } catch (e: any) { message.error(e.message); }
   };

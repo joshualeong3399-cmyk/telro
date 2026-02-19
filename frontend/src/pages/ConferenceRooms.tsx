@@ -4,7 +4,7 @@ import {
   Switch, Space, Tag, message, Popconfirm, Typography,
 } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, MailOutlined, SyncOutlined } from '@ant-design/icons';
-import axios from 'axios';
+import api from '@/services/api';
 
 const { Title } = Typography;
 
@@ -18,7 +18,7 @@ const ConferenceRooms: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await axios.get('/api/conference');
+      const r = await api.get('/conference');
       setRooms(r.data.rows || r.data);
     } catch (e: any) { message.error(e.message); }
     finally { setLoading(false); }
@@ -32,8 +32,8 @@ const ConferenceRooms: React.FC = () => {
   const handleSave = async () => {
     try {
       const vals = await form.validateFields();
-      if (editing) await axios.put(`/api/conference/${editing.id}`, vals);
-      else await axios.post('/api/conference', vals);
+      if (editing) await api.put(`/conference/${editing.id}`, vals);
+      else await api.post('/conference', vals);
       message.success('保存成功');
       setModalOpen(false);
       load();
@@ -41,7 +41,7 @@ const ConferenceRooms: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    try { await axios.delete(`/api/conference/${id}`); message.success('删除成功'); load(); }
+    try { await api.delete(`/conference/${id}`); message.success('删除成功'); load(); }
     catch (e: any) { message.error(e.message); }
   };
 

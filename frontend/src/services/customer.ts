@@ -91,11 +91,11 @@ export const customerService = {
     filters?: CustomerFilters,
     params?: { limit?: number; offset?: number }
   ): Promise<CustomerListResponse> =>
-    api.get<ApiResponseWrapper<CustomerListResponse>>('/customers', { params: { ...filters, ...params } }).then((r) => r.data.data),
+        api.get<ApiResponseWrapper<CustomerListResponse>>('/customers', { params: { ...filters, ...params } }).then((r) => r.data),
 
   /** 获取客户详情 */
   getCustomerDetail: (customerId: string): Promise<Customer> =>
-    api.get<ApiResponseWrapper<Customer>>(`/customers/${customerId}`).then((r) => r.data.data),
+        api.get<ApiResponseWrapper<Customer>>(`/customers/${customerId}`).then((r) => r.data),
 
   /** 创建客户 */
   createCustomer: (data: Partial<Customer>): Promise<CreateCustomerResponse> =>

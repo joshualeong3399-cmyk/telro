@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Row, Col, Statistic, DatePicker, Table, Tag, Spin, Button, Space } from 'antd';
 import { PhoneOutlined, CheckCircleOutlined, ClockCircleOutlined, RiseOutlined, DownloadOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import axios from 'axios';
+import api from '@/services/api';
 import dayjs, { Dayjs } from 'dayjs';
 
 const { RangePicker } = DatePicker;
@@ -22,8 +22,6 @@ interface AgentPerf {
   avgTalkTimeSec: number;
   conversionRate: number;
 }
-
-const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api';
 
 const formatDuration = (sec: number) => {
   const m = Math.floor(sec / 60);
@@ -48,8 +46,8 @@ const Reports: React.FC = () => {
       const [start, end] = dateRange;
       const params = { startDate: start.format('YYYY-MM-DD'), endDate: end.format('YYYY-MM-DD') };
       const [dailyRes, agentRes] = await Promise.all([
-        axios.get(`${API_BASE}/calls/stats/daily`, { params }),
-        axios.get(`${API_BASE}/calls/stats/agent-performance`, { params }),
+        api.get('/calls/stats/daily', { params }),
+        api.get('/calls/stats/agent-performance', { params }),
       ]);
       const dailyData: DailyStats[] = dailyRes.data || [];
       setDaily(dailyData);

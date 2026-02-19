@@ -7,7 +7,7 @@ import {
   PlusOutlined, DeleteOutlined, EditOutlined, InboxOutlined,
   AudioOutlined, SyncOutlined,
 } from '@ant-design/icons';
-import axios from 'axios';
+import api from '@/services/api';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -25,7 +25,7 @@ const Voicemail: React.FC = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const r = await axios.get('/api/voicemail');
+      const r = await api.get('/voicemail');
       setBoxes(r.data.rows || r.data);
     } catch (e: any) { message.error(e.message); }
     finally { setLoading(false); }
@@ -33,7 +33,7 @@ const Voicemail: React.FC = () => {
 
   const loadExtensions = async () => {
     try {
-      const r = await axios.get('/api/extensions');
+      const r = await api.get('/extensions');
       setExtensions(r.data.rows || r.data);
     } catch {}
   };
@@ -66,10 +66,10 @@ const Voicemail: React.FC = () => {
     try {
       const vals = await form.validateFields();
       if (editingBox) {
-        await axios.put(`/api/voicemail/${editingBox.id}`, vals);
+        await api.put(`/voicemail/${editingBox.id}`, vals);
         message.success('更新成功');
       } else {
-        await axios.post('/api/voicemail', vals);
+        await api.post('/voicemail', vals);
         message.success('创建成功');
       }
       setModalOpen(false);
@@ -79,14 +79,14 @@ const Voicemail: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    try { await axios.delete(`/api/voicemail/${id}`); message.success('删除成功'); load(); }
+    try { await api.delete(`/voicemail/${id}`); message.success('删除成功'); load(); }
     catch (e: any) { message.error(e.message); }
   };
 
   const loadMessages = async (boxId: string) => {
     setLoadingMessages(boxId);
     try {
-      const r = await axios.get(`/api/voicemail/${boxId}/messages`);
+      const r = await api.get(`/voicemail/${boxId}/messages`);
       setMessagesMap(prev => ({ ...prev, [boxId]: r.data }));
     } catch (e: any) { message.error(e.message); }
     finally { setLoadingMessages(null); }
@@ -94,7 +94,7 @@ const Voicemail: React.FC = () => {
 
   const deleteMessage = async (boxId: string, folder: string, msgNum: string) => {
     try {
-      await axios.delete(`/api/voicemail/${boxId}/messages/${folder}/${msgNum}`);
+      await api.delete(`/voicemail/${boxId}/messages/${folder}/${msgNum}`);
       message.success('消息已删除');
       loadMessages(boxId);
     } catch (e: any) { message.error(e.message); }
